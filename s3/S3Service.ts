@@ -69,6 +69,9 @@ export class S3Service {
 			throw new Error("S3 client is not configured.");
 		}
 
+		// https://docs.aws.amazon.com/AWSJavaScriptSDK/v3/latest/Package/-aws-sdk-client-s3/Interface/ListObjectsV2CommandOutput/
+		// https://docs.aws.amazon.com/AWSJavaScriptSDK/v3/latest/Package/-aws-sdk-client-s3/Class/ListObjectsV2Command/
+
 		const remoteFiles = new Map<string, S3Object>();
 		let isTruncated = true;
 		let continuationToken: string | undefined = undefined;
