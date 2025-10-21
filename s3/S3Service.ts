@@ -78,15 +78,16 @@ export class S3Service {
 
 		// Loop to handle pagination of S3 results.
 		while (isTruncated) {
-			const command = new ListObjectsV2Command({
+			const command: ListObjectsV2Command = new ListObjectsV2Command({
 				Bucket: this.settings.bucketName,
 				Prefix: this.settings.remotePrefix.trim(),
 				ContinuationToken: continuationToken,
 			});
 
-			const response = await this.client!.send(command);
+			const response: Awaited<ReturnType<S3Client["send"]>> =
+				await this.client!.send(command);
 
-			response.Contents?.forEach((obj) => {
+			response.Contents?.forEach((obj: S3Object) => {
 				if (obj.Key) {
 					// Don't include the folder marker object itself.
 					if (
