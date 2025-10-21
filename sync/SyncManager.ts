@@ -145,7 +145,7 @@ export class SyncManager {
 		}
 	}
 
-	private  	(): Map<string, TFile> {
+	private getLocalFiles(): Map<string, TFile> {
 		const localFiles = new Map<string, TFile>();
 		this.app.vault.getFiles().forEach((file) => {
 			// Ignore non-markdown files and files/folders starting with a dot.
