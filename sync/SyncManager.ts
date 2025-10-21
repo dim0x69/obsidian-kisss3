@@ -5,6 +5,8 @@ import { S3SyncSettings } from "../settings";
 import { _Object as S3Object } from "@aws-sdk/client-s3";
 
 // Contains the core logic for comparing and synchronizing files.
+// https://docs.obsidian.md/Reference/TypeScript+API/FileStats
+
 export class SyncManager {
 	private s3Service: S3Service;
 	private running = false;
