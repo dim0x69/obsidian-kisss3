@@ -2,6 +2,7 @@ import { TFile } from "obsidian";
 import {
 	S3Client,
 	ListObjectsV2Command,
+	ListObjectsV2CommandOutput,
 	GetObjectCommand,
 	PutObjectCommand,
 	_Object as S3Object, // Alias to avoid conflict with Object
@@ -84,7 +85,7 @@ export class S3Service {
 				ContinuationToken: continuationToken,
 			});
 
-			const response: Awaited<ReturnType<S3Client["send"]>> =
+			const response: ListObjectsV2CommandOutput =
 				await this.client!.send(command);
 
 			response.Contents?.forEach((obj: S3Object) => {
