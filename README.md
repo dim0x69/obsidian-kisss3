@@ -1,5 +1,8 @@
 # Keep it simple, stupid! S3 Plugin for Obsidian
 
+Todo:
+- [ ] Delete files
+
 A simple, single-purpose plugin to keep your Obsidian vault in sync with an Amazon S3 bucket. It does one thing: bidirectional sync between your local vault and S3, with minimal configuration and no unnecessary complexity.
 
 - **Sync both ways:** Upload new or changed notes to S3, download new or updated notes from S3, and delete files that were removed on either side.
