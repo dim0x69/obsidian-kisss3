@@ -1,0 +1,11 @@
+{
+	"id": "obsidian-kisss3",
+	"name": "obsidian-kiss3",
+	"version": "1.0.0",
+	"minAppVersion": "0.15.0",
+	"description": "Keep it simple, stupid! S3 Plugin for Obsidian",
+	"author": "Obsidian",
+	"authorUrl": "https://obsidian.md",
+	"fundingUrl": "https://obsidian.md/pricing",
+	"isDesktopOnly": false
+}
