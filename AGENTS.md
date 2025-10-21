@@ -1,17 +1,18 @@
-# Obsidian community plugin
+# Simple S3 Plugin for Obsidian
 
 ## Project overview
 
-- Target: Obsidian Community Plugin (TypeScript → bundled JavaScript).
+- Target: Simple S3 Plugin for Obsidian (TypeScript → bundled JavaScript).
+- Purpose: Enable seamless integration with Amazon S3 for file uploads and management directly from Obsidian.
 - Entry point: `main.ts` compiled to `main.js` and loaded by Obsidian.
-- Required release artifacts: `main.js`, `manifest.json`, and optional `styles.css`.
+- Required release artifacts: `main.js`, `manifest.json`.
 
 ## Environment & tooling
 
 - Node.js: use current LTS (Node 18+ recommended).
-- **Package manager: npm** (required for this sample - `package.json` defines npm scripts and dependencies).
-- **Bundler: esbuild** (required for this sample - `esbuild.config.mjs` and build scripts depend on it). Alternative bundlers like Rollup or webpack are acceptable for other projects if they bundle all external dependencies into `main.js`.
-- Types: `obsidian` type definitions.
+- **Package manager: npm** (required - `package.json` defines npm scripts and dependencies).
+- **Bundler: esbuild** (required - `esbuild.config.mjs` and build scripts depend on it).
+- Types: `obsidian` type definitions and AWS SDK for JavaScript (`@aws-sdk`).
 
 **Note**: This sample project has specific technical dependencies on npm and esbuild. If you're creating a plugin from scratch, you can choose different tools, but you'll need to replace the build configuration accordingly.
 
@@ -50,14 +51,13 @@ npm run build
     main.ts           # Plugin entry point, lifecycle management
     settings.ts       # Settings interface and defaults
     commands/         # Command implementations
-      command1.ts
-      command2.ts
+      upload.ts       # Command to upload files to S3
+      list.ts         # Command to list S3 bucket contents
     ui/              # UI components, modals, views
-      modal.ts
-      view.ts
+      s3-modal.ts     # Modal for S3 operations
     utils/           # Utility functions, helpers
-      helpers.ts
-      constants.ts
+      aws-client.ts   # AWS SDK client setup
+      constants.ts    # Constants for S3 configuration
     types.ts         # TypeScript interfaces and types
   ```
 - **Do not commit build artifacts**: Never commit `node_modules/`, `main.js`, or other generated files to version control.
@@ -104,11 +104,11 @@ npm run build
 
 Follow Obsidian's **Developer Policies** and **Plugin Guidelines**. In particular:
 
-- Default to local/offline operation. Only make network requests when essential to the feature.
+- Default to local/offline operation. Only make network requests when essential to the feature (e.g., uploading files to S3 or listing bucket contents).
 - No hidden telemetry. If you collect optional analytics or call third-party services, require explicit opt-in and document clearly in `README.md` and in settings.
 - Never execute remote code, fetch and eval scripts, or auto-update plugin code outside of normal releases.
 - Minimize scope: read/write only what's necessary inside the vault. Do not access files outside the vault.
-- Clearly disclose any external services used, data sent, and risks.
+- Clearly disclose any external services used (e.g., AWS S3), data sent, and risks.
 - Respect user privacy. Do not collect vault contents, filenames, or personal information unless absolutely necessary and explicitly consented.
 - Avoid deceptive patterns, ads, or spammy notifications.
 - Register and clean up all DOM, app, and interval listeners using the provided `register*` helpers so the plugin unloads safely.
@@ -239,6 +239,7 @@ this.registerInterval(window.setInterval(() => { /* ... */ }, 1000));
 - Plugin doesn't load after build: ensure `main.js` and `manifest.json` are at the top level of the plugin folder under `<Vault>/.obsidian/plugins/<plugin-id>/`. 
 - Build issues: if `main.js` is missing, run `npm run build` or `npm run dev` to compile your TypeScript source code.
 - Commands not appearing: verify `addCommand` runs after `onload` and IDs are unique.
+- AWS S3 issues: ensure your AWS credentials and S3 bucket configuration are correctly set in the plugin settings.
 - Settings not persisting: ensure `loadData`/`saveData` are awaited and you re-render the UI after changes.
 - Mobile-only issues: confirm you're not using desktop-only APIs; check `isDesktopOnly` and adjust.
 
