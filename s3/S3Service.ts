@@ -5,6 +5,7 @@ import {
 	ListObjectsV2CommandOutput,
 	GetObjectCommand,
 	PutObjectCommand,
+	DeleteObjectCommand,
 	_Object as S3Object, // Alias to avoid conflict with Object
 } from "@aws-sdk/client-s3";
 import { S3SyncSettings } from "../settings";
@@ -131,5 +132,16 @@ export class S3Service {
 
 		const response = await this.client!.send(command);
 		return response.Body?.transformToString() ?? "";
+	}
+
+	async deleteRemoteFile(path: string): Promise<void> {
+		if (!this.isConfigured()) throw new Error("S3 client not configured.");
+
+		const command = new DeleteObjectCommand({
+			Bucket: this.settings.bucketName,
+			Key: this.getRemoteKey(path),
+		});
+
+		await this.client!.send(command);
 	}
 }

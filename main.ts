@@ -1,5 +1,5 @@
 // Import necessary modules from Obsidian
-import { Plugin } from "obsidian";
+import { Plugin, TFile } from "obsidian";
 
 // Import local modules
 import { S3SyncSettings, DEFAULT_SETTINGS } from "./settings";
@@ -25,6 +25,15 @@ export default class S3SyncPlugin extends Plugin {
 				this.syncManager.runSync();
 			},
 		});
+
+		// Register delete event handler for real-time sync
+		this.registerEvent(
+			this.app.vault.on("delete", (file) => {
+				if (file instanceof TFile && file.extension === "md") {
+					this.syncManager.handleLocalDelete(file.path);
+				}
+			})
+		);
 
 		this.updateSyncInterval();
 	}
