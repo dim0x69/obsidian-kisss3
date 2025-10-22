@@ -36,6 +36,9 @@ export default class S3SyncPlugin extends Plugin {
 		);
 
 		this.updateSyncInterval();
+
+		// Run initial sync automatically when plugin loads
+		this.syncManager.runSync();
 	}
 
 	onunload() {

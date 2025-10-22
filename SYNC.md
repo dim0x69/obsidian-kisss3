@@ -97,7 +97,8 @@ The sync process only includes:
 
 ## Sync Frequency
 
-The plugin supports both manual and automatic synchronization:
+The plugin supports multiple synchronization modes:
+- **Startup sync**: Automatically triggered when the plugin loads (if properly configured)
 - **Manual sync**: Triggered via the "Sync Now" command
 - **Automatic sync**: Configurable interval-based syncing (when enabled in settings)
 
