@@ -1,4 +1,4 @@
-import { App, PluginSettingTab, Setting } from "obsidian";
+import { App, PluginSettingTab, Setting, normalizePath } from "obsidian";
 import S3SyncPlugin from "../main";
 
 export class S3SyncSettingTab extends PluginSettingTab {
@@ -12,7 +12,6 @@ export class S3SyncSettingTab extends PluginSettingTab {
 	display(): void {
 		const { containerEl } = this;
 		containerEl.empty();
-		containerEl.createEl("h2", { text: "S3 Sync Settings" });
 
 		new Setting(containerEl)
 			.setName("S3 Endpoint")
@@ -82,7 +81,7 @@ export class S3SyncSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("Remote Prefix (Folder)")
+			.setName("Remote prefix (folder)")
 			.setDesc(
 				"Optional folder path in the bucket to sync to (e.g., `obsidian/`). Slashes are optional.",
 			)
@@ -91,15 +90,17 @@ export class S3SyncSettingTab extends PluginSettingTab {
 					.setPlaceholder("my-vault")
 					.setValue(this.plugin.settings.remotePrefix)
 					.onChange(async (value) => {
-						this.plugin.settings.remotePrefix = value.trim();
+						this.plugin.settings.remotePrefix = normalizePath(value.trim());
 						await this.plugin.saveSettings();
 					}),
 			);
 
-		containerEl.createEl("h3", { text: "Automatic Sync" });
+		new Setting(containerEl)
+			.setHeading()
+			.setName("Automatic sync");
 
 		new Setting(containerEl)
-			.setName("Enable Automatic Sync")
+			.setName("Enable automatic sync")
 			.setDesc("Enable syncing at a regular interval.")
 			.addToggle((toggle) =>
 				toggle
@@ -111,7 +112,7 @@ export class S3SyncSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("Sync Interval (minutes)")
+			.setName("Sync interval (minutes)")
 			.setDesc(
 				"How often to sync automatically. Must be a number greater than 0.",
 			)
