@@ -63,9 +63,7 @@ export class SyncManager {
 					syncNotice.setMessage(
 						`S3 Sync: Uploading ${localFile.path}`,
 					);
-					const content = this.isBinaryFile(localFile.path) 
-						? await this.app.vault.readBinary(localFile)
-						: await this.app.vault.read(localFile);
+					const content = await this.app.vault.readBinary(localFile);
 					await this.s3Service.uploadFile(localFile, content);
 				} else {
 					const localMtime = localFile.stat.mtime;
@@ -85,9 +83,7 @@ export class SyncManager {
 						syncNotice.setMessage(
 							`S3 Sync: Uploading update for ${localFile.path}`,
 						);
-						const content = this.isBinaryFile(localFile.path) 
-							? await this.app.vault.readBinary(localFile)
-							: await this.app.vault.read(localFile);
+						const content = await this.app.vault.readBinary(localFile);
 						await this.s3Service.uploadFile(localFile, content);
 					} else if (remoteMtime > localMtime) {
 						// Remote is newer -> Download
@@ -96,15 +92,9 @@ export class SyncManager {
 						);
 						const content =
 							await this.s3Service.downloadFile(remoteFile);
-						if (typeof content === 'string') {
-							await this.app.vault.modify(localFile, content, {
-								mtime: remoteMtime,
-							});
-						} else {
-							await this.app.vault.modifyBinary(localFile, content, {
-								mtime: remoteMtime,
-							});
-						}
+						await this.app.vault.modifyBinary(localFile, content, {
+							mtime: remoteMtime,
+						});
 					}
 					// If times are equal or no changes since last sync, do nothing.
 				}
@@ -135,15 +125,9 @@ export class SyncManager {
 							/* Folder likely created between check and call, ignore */
 						}
 					}
-					if (typeof content === 'string') {
-						await this.app.vault.create(path, content, {
-							mtime: remoteFile.LastModified!.getTime(),
-						});
-					} else {
-						await this.app.vault.createBinary(path, content, {
-							mtime: remoteFile.LastModified!.getTime(),
-						});
-					}
+					await this.app.vault.createBinary(path, content, {
+						mtime: remoteFile.LastModified!.getTime(),
+					});
 				}
 			}
 
@@ -185,23 +169,15 @@ export class SyncManager {
 		);
 
 		// Save the remote version with a new name.
-		if (typeof remoteContent === 'string') {
-			await this.app.vault.create(conflictFileName, remoteContent, {
-				mtime: remoteFile.LastModified!.getTime(),
-			});
-		} else {
-			await this.app.vault.createBinary(conflictFileName, remoteContent, {
-				mtime: remoteFile.LastModified!.getTime(),
-			});
-		}
+		await this.app.vault.createBinary(conflictFileName, remoteContent, {
+			mtime: remoteFile.LastModified!.getTime(),
+		});
 		new Notice(
 			`S3 Sync: Saved remote version of ${localFile.basename} as ${conflictFileName}`,
 		);
 
 		// Upload the local version to overwrite the remote original, ensuring the user's latest local changes are preserved in the cloud.
-		const localContent = this.isBinaryFile(localFile.path) 
-			? await this.app.vault.readBinary(localFile)
-			: await this.app.vault.read(localFile);
+		const localContent = await this.app.vault.readBinary(localFile);
 		await this.s3Service.uploadFile(localFile, localContent);
 	}
 
@@ -224,19 +200,7 @@ export class SyncManager {
 		return `${baseName} (conflict ${timestamp})${extension}`;
 	}
 
-	private isBinaryFile(filePath: string): boolean {
-		const binaryExtensions = [
-			'png', 'jpg', 'jpeg', 'gif', 'bmp', 'svg', 'webp',  // Images
-			'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', // Documents
-			'zip', 'rar', '7z', 'tar', 'gz',  // Archives
-			'mp3', 'mp4', 'wav', 'avi', 'mov', 'mkv',  // Media
-			'exe', 'dmg', 'app',  // Executables
-			'bin', 'dat', 'db', 'sqlite',  // Data files
-		];
-		
-		const extension = filePath.split('.').pop()?.toLowerCase();
-		return extension ? binaryExtensions.includes(extension) : false;
-	}
+
 
 	async handleLocalDelete(path: string): Promise<void> {
 		if (!this.s3Service.isConfigured()) {

@@ -109,27 +109,24 @@ export class S3Service {
 		return remoteFiles;
 	}
 
-	async uploadFile(file: TFile, content: string | ArrayBuffer): Promise<void> {
+	async uploadFile(file: TFile, content: ArrayBuffer): Promise<void> {
 		if (!this.isConfigured()) throw new Error("S3 client not configured.");
 
-		let body: Uint8Array;
-		if (typeof content === 'string') {
-			body = new TextEncoder().encode(content);
-		} else {
-			body = new Uint8Array(content);
-		}
+		const body = new Uint8Array(content);
+		const contentType = this.getMimeType(file.path);
 
 		const command = new PutObjectCommand({
 			Bucket: this.settings.bucketName,
 			Key: this.getRemoteKey(file.path),
 			Body: body,
 			ContentLength: body.length,
+			ContentType: contentType,
 		});
 
 		await this.client!.send(command);
 	}
 
-	async downloadFile(s3Object: S3Object): Promise<string | ArrayBuffer> {
+	async downloadFile(s3Object: S3Object): Promise<ArrayBuffer> {
 		if (!this.isConfigured()) throw new Error("S3 client not configured.");
 
 		const command = new GetObjectCommand({
@@ -138,29 +135,61 @@ export class S3Service {
 		});
 
 		const response = await this.client!.send(command);
-		
-		// Try to detect if this is a binary file based on the key (file extension)
-		const localPath = this.getLocalPath(s3Object.Key!);
-		if (this.isBinaryFile(localPath)) {
-			const byteArray = await response.Body?.transformToByteArray();
-			return byteArray?.buffer ?? new ArrayBuffer(0);
-		} else {
-			return response.Body?.transformToString() ?? "";
-		}
+		const byteArray = await response.Body?.transformToByteArray();
+		return byteArray?.buffer ?? new ArrayBuffer(0);
 	}
 
-	private isBinaryFile(filePath: string): boolean {
-		const binaryExtensions = [
-			'png', 'jpg', 'jpeg', 'gif', 'bmp', 'svg', 'webp',  // Images
-			'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', // Documents
-			'zip', 'rar', '7z', 'tar', 'gz',  // Archives
-			'mp3', 'mp4', 'wav', 'avi', 'mov', 'mkv',  // Media
-			'exe', 'dmg', 'app',  // Executables
-			'bin', 'dat', 'db', 'sqlite',  // Data files
-		];
-		
+	private getMimeType(filePath: string): string {
 		const extension = filePath.split('.').pop()?.toLowerCase();
-		return extension ? binaryExtensions.includes(extension) : false;
+		
+		const mimeTypes: { [key: string]: string } = {
+			// Text files
+			'md': 'text/markdown',
+			'txt': 'text/plain',
+			'json': 'application/json',
+			'js': 'application/javascript',
+			'ts': 'application/typescript',
+			'css': 'text/css',
+			'html': 'text/html',
+			'xml': 'application/xml',
+			'csv': 'text/csv',
+			
+			// Images
+			'png': 'image/png',
+			'jpg': 'image/jpeg',
+			'jpeg': 'image/jpeg',
+			'gif': 'image/gif',
+			'bmp': 'image/bmp',
+			'svg': 'image/svg+xml',
+			'webp': 'image/webp',
+			'ico': 'image/x-icon',
+			
+			// Documents
+			'pdf': 'application/pdf',
+			'doc': 'application/msword',
+			'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+			'xls': 'application/vnd.ms-excel',
+			'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+			'ppt': 'application/vnd.ms-powerpoint',
+			'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+			
+			// Archives
+			'zip': 'application/zip',
+			'rar': 'application/vnd.rar',
+			'7z': 'application/x-7z-compressed',
+			'tar': 'application/x-tar',
+			'gz': 'application/gzip',
+			
+			// Media
+			'mp3': 'audio/mpeg',
+			'mp4': 'video/mp4',
+			'wav': 'audio/wav',
+			'avi': 'video/x-msvideo',
+			'mov': 'video/quicktime',
+			'mkv': 'video/x-matroska',
+		};
+		
+		return extension ? (mimeTypes[extension] || 'application/octet-stream') : 'application/octet-stream';
 	}
 
 	async deleteRemoteFile(path: string): Promise<void> {
