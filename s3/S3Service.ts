@@ -109,20 +109,27 @@ export class S3Service {
 		return remoteFiles;
 	}
 
-	async uploadFile(file: TFile, content: string): Promise<void> {
+	async uploadFile(file: TFile, content: string | ArrayBuffer): Promise<void> {
 		if (!this.isConfigured()) throw new Error("S3 client not configured.");
+
+		let body: Uint8Array;
+		if (typeof content === 'string') {
+			body = new TextEncoder().encode(content);
+		} else {
+			body = new Uint8Array(content);
+		}
 
 		const command = new PutObjectCommand({
 			Bucket: this.settings.bucketName,
 			Key: this.getRemoteKey(file.path),
-			Body: content,
-			ContentLength: new TextEncoder().encode(content).length,
+			Body: body,
+			ContentLength: body.length,
 		});
 
 		await this.client!.send(command);
 	}
 
-	async downloadFile(s3Object: S3Object): Promise<string> {
+	async downloadFile(s3Object: S3Object): Promise<string | ArrayBuffer> {
 		if (!this.isConfigured()) throw new Error("S3 client not configured.");
 
 		const command = new GetObjectCommand({
@@ -131,7 +138,29 @@ export class S3Service {
 		});
 
 		const response = await this.client!.send(command);
-		return response.Body?.transformToString() ?? "";
+		
+		// Try to detect if this is a binary file based on the key (file extension)
+		const localPath = this.getLocalPath(s3Object.Key!);
+		if (this.isBinaryFile(localPath)) {
+			const byteArray = await response.Body?.transformToByteArray();
+			return byteArray?.buffer ?? new ArrayBuffer(0);
+		} else {
+			return response.Body?.transformToString() ?? "";
+		}
+	}
+
+	private isBinaryFile(filePath: string): boolean {
+		const binaryExtensions = [
+			'png', 'jpg', 'jpeg', 'gif', 'bmp', 'svg', 'webp',  // Images
+			'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', // Documents
+			'zip', 'rar', '7z', 'tar', 'gz',  // Archives
+			'mp3', 'mp4', 'wav', 'avi', 'mov', 'mkv',  // Media
+			'exe', 'dmg', 'app',  // Executables
+			'bin', 'dat', 'db', 'sqlite',  // Data files
+		];
+		
+		const extension = filePath.split('.').pop()?.toLowerCase();
+		return extension ? binaryExtensions.includes(extension) : false;
 	}
 
 	async deleteRemoteFile(path: string): Promise<void> {
