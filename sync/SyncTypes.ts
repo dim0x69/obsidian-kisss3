@@ -9,9 +9,7 @@ export interface FileInfo {
 	mtime: number; // Unix timestamp in milliseconds
 }
 
-export interface LocalFile extends FileInfo {
-	// Additional properties specific to local files if needed
-}
+export type LocalFile = FileInfo;
 
 export interface RemoteFile extends FileInfo {
 	key: string; // S3 object key

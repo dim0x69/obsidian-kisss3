@@ -1,4 +1,4 @@
-import { App, TFolder } from "obsidian";
+import { App, TFolder, TFile } from "obsidian";
 import { SyncState } from "./SyncTypes";
 
 /**
@@ -21,7 +21,7 @@ export class SyncStateManager {
 				return {};
 			}
 
-			const content = await this.app.vault.read(stateFile as any);
+			const content = await this.app.vault.read(stateFile as TFile);
 			return JSON.parse(content) as SyncState;
 		} catch (error) {
 			console.warn("S3 Sync: Could not load sync state, starting with empty state:", error);
@@ -43,7 +43,7 @@ export class SyncStateManager {
 
 			if (stateFile && !(stateFile instanceof TFolder)) {
 				// File exists, modify it
-				await this.app.vault.modify(stateFile as any, content);
+				await this.app.vault.modify(stateFile as TFile, content);
 			} else {
 				// File doesn't exist, create it
 				await this.app.vault.create(this.STATE_FILE_PATH, content);

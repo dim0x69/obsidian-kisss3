@@ -118,11 +118,11 @@ export class SyncManager {
 
 		for (const [path, s3Object] of s3Objects.entries()) {
 			// Apply exclusion rule: ignore files/folders starting with a dot
-			if (!this.shouldIgnoreFile(path)) {
+			if (!this.shouldIgnoreFile(path) && s3Object.LastModified && s3Object.Key) {
 				remoteFiles.set(path, {
 					path: path,
-					mtime: s3Object.LastModified!.getTime(),
-					key: s3Object.Key!
+					mtime: s3Object.LastModified.getTime(),
+					key: s3Object.Key
 				});
 			}
 		}
