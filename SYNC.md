@@ -4,19 +4,41 @@ This document describes the file synchronization behavior between your local Obs
 
 ## Sync Process Overview
 
-The plugin performs bidirectional synchronization by comparing file states between local and remote storage. Each sync operation compares modification timestamps and determines the appropriate action based on when files were last changed relative to the previous sync timestamp.
+The plugin performs three-source synchronization by comparing file states between **Local** vault files, **Remote** S3 objects, and a **State** file (`.obsidian/plugins/kisss3/sync-state.json`) that tracks the last known synchronized state of each file. This approach provides more robust conflict detection and resolution compared to simple timestamp-based sync.
 
-## Sync Situations and Actions
+### Three-Source Algorithm
 
-| Situation | Local File | Remote File | Local Modified Since Last Sync | Remote Modified Since Last Sync | Action Taken |
-|-----------|------------|-------------|--------------------------------|--------------------------------|--------------|
-| 1. Remote only | ❌ Not exists | ✅ Exists | N/A | N/A | **Download** remote file |
-| 2. Local only | ✅ Exists | ❌ Not exists | N/A | N/A | **Upload** local file |
-| 3. Local modified | ✅ Exists | ✅ Exists | ✅ Yes | ❌ No | **Upload** local file |
-| 4. Remote modified | ✅ Exists | ✅ Exists | ❌ No | ✅ Yes | **Download** remote file |
-| 5. Both modified (conflict) | ✅ Exists | ✅ Exists | ✅ Yes | ✅ Yes | **Keep both** - rename remote copy |
-| 6. No changes | ✅ Exists | ✅ Exists | ❌ No | ❌ No | **Do nothing** |
-| 7. Explicit delete | ❌ Deleted locally | ✅ Exists | N/A | N/A | **Delete** from remote |
+1. **Local Map**: Generated from all vault files (excluding files/folders starting with `.`)
+2. **Remote Map**: Generated from all S3 objects (excluding files/folders starting with `.`) 
+3. **State Map**: Loaded from the sync state file containing previous sync state
+
+For each unique file path across all three sources, the algorithm:
+- Categorizes each file as **Created**, **Modified**, **Deleted**, or **Unchanged** compared to the state
+- Applies a decision matrix to determine the appropriate action
+- Executes actions in safe order: downloads → uploads → deletes
+- Updates the state file only after successful completion
+
+## Sync Decision Matrix
+
+The three-source algorithm categorizes each file's status (Created/Modified/Deleted/Unchanged) by comparing current Local and Remote states against the previous State, then applies this decision matrix:
+
+| Local Status | Remote Status | Action Taken | Description |
+|-------------|---------------|--------------|-------------|
+| **Created** | **Unchanged** | **Upload** | New local file |
+| **Modified** | **Unchanged** | **Upload** | Local file was modified |
+| **Unchanged** | **Created** | **Download** | New remote file |
+| **Unchanged** | **Modified** | **Download** | Remote file was modified |
+| **Created/Modified** | **Created/Modified** | **Conflict Resolution** | Both sides changed |
+| **Deleted** | **Modified/Created** | **Download** | Modification beats deletion |
+| **Modified/Created** | **Deleted** | **Upload** | Modification beats deletion |
+| **Deleted** | **Deleted** | **Do Nothing** | Both sides deleted |
+| **Unchanged** | **Unchanged** | **Do Nothing** | No changes |
+
+### Conflict Resolution Rules
+
+1. **Modification vs. Deletion**: Modification wins (upload or download accordingly)
+2. **Creation vs. Deletion**: Creation wins (upload or download accordingly)  
+3. **All other conflicts**: Newest file wins by modification time (upload or download)
 
 ## Detailed Situation Descriptions
 
@@ -91,11 +113,15 @@ The sync process includes:
 
 ## Technical Implementation Details
 
-- **Timestamp comparison**: The plugin uses millisecond precision timestamps for modification time comparisons
-- **Last sync tracking**: A `lastSyncTimestamp` is stored in plugin settings and updated after each successful sync
+- **State File**: Sync state is stored in `.obsidian/plugins/kisss3/sync-state.json` as a JSON map of `{ "file/path": "mtime_timestamp" }`
+- **Timestamp precision**: Uses millisecond precision Unix timestamps for modification time comparisons
+- **Exclusion rules**: Files/folders beginning with a dot (`.`) are ignored in all sync operations
+- **Safe execution order**: Actions are executed in order: downloads → uploads → deletes to prevent data loss
+- **Atomic state updates**: State file is only updated after successful completion of all sync actions
 - **Folder creation**: Missing folder structures are automatically created when downloading files
-- **Content encoding**: Files are handled as UTF-8 encoded text
+- **Folder pruning**: Empty folders are optionally pruned after sync completion
 - **S3 prefixes**: Remote file paths respect the configured S3 prefix setting
+- **Error handling**: Any sync error aborts the operation and prevents state file updates
 
 ## Sync Frequency
 
