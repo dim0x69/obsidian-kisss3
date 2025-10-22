@@ -20,7 +20,7 @@ export default class S3SyncPlugin extends Plugin {
 
 		this.addCommand({
 			id: "s3-sync-now",
-			name: "Sync Now",
+			name: "Sync now",
 			callback: () => {
 				this.syncManager.runSync();
 			},
