@@ -202,4 +202,21 @@ export class SyncManager {
 
 		return `${baseName} (conflict ${timestamp})${extension}`;
 	}
+
+	async handleLocalDelete(path: string): Promise<void> {
+		if (!this.s3Service.isConfigured()) {
+			return; // Silently skip if not configured
+		}
+
+		try {
+			// Check if file exists remotely
+			const remoteFiles = await this.s3Service.listRemoteFiles();
+			if (remoteFiles.has(path)) {
+				await this.s3Service.deleteRemoteFile(path);
+				console.log(`S3 Sync: Deleted remote file ${path}`);
+			}
+		} catch (error) {
+			console.error(`S3 Sync: Error deleting remote file ${path}:`, error);
+		}
+	}
 }
