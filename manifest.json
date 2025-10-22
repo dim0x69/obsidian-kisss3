@@ -1,11 +1,11 @@
 {
-	"id": "obsidian-kisss3",
+	"id": "kisss3",
 	"name": "obsidian-kiss3",
-	"version": "1.0.0",
-	"minAppVersion": "0.15.0",
+	"version": "3.0.0",
+	"minAppVersion": "1.0.0",
 	"description": "Keep it simple, stupid! S3 Plugin for Obsidian. Sync your vault from and to S3.",
-	"author": "Obsidian",
-	"authorUrl": "https://obsidian.md",
-	"fundingUrl": "https://obsidian.md/pricing",
+	"author": "Dimitrios Slamaris",
+	"authorUrl": "https://github.com/dim0x69",
+	"fundingUrl": "",
 	"isDesktopOnly": false
 }
