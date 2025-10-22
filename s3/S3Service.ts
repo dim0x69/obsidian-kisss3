@@ -8,6 +8,7 @@ import {
 	DeleteObjectCommand,
 	_Object as S3Object, // Alias to avoid conflict with Object
 } from "@aws-sdk/client-s3";
+import * as mimeTypes from "mime-types";
 import { S3SyncSettings } from "../settings";
 
 // Manages all interactions with the S3-compatible object storage.
@@ -109,20 +110,24 @@ export class S3Service {
 		return remoteFiles;
 	}
 
-	async uploadFile(file: TFile, content: string): Promise<void> {
+	async uploadFile(file: TFile, content: ArrayBuffer): Promise<void> {
 		if (!this.isConfigured()) throw new Error("S3 client not configured.");
+
+		const body = new Uint8Array(content);
+		const contentType = this.getMimeType(file.path);
 
 		const command = new PutObjectCommand({
 			Bucket: this.settings.bucketName,
 			Key: this.getRemoteKey(file.path),
-			Body: content,
-			ContentLength: new TextEncoder().encode(content).length,
+			Body: body,
+			ContentLength: body.length,
+			ContentType: contentType,
 		});
 
 		await this.client!.send(command);
 	}
 
-	async downloadFile(s3Object: S3Object): Promise<string> {
+	async downloadFile(s3Object: S3Object): Promise<ArrayBuffer> {
 		if (!this.isConfigured()) throw new Error("S3 client not configured.");
 
 		const command = new GetObjectCommand({
@@ -131,7 +136,13 @@ export class S3Service {
 		});
 
 		const response = await this.client!.send(command);
-		return response.Body?.transformToString() ?? "";
+		const byteArray = await response.Body?.transformToByteArray();
+		return byteArray?.buffer ?? new ArrayBuffer(0);
+	}
+
+	private getMimeType(filePath: string): string {
+		const mimeType = mimeTypes.lookup(filePath);
+		return mimeType || 'application/octet-stream';
 	}
 
 	async deleteRemoteFile(path: string): Promise<void> {
