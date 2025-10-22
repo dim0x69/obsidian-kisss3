@@ -58,7 +58,7 @@ The local file is updated with the remote content and the remote modification ti
 When both local and remote versions have been modified since the last sync, the plugin resolves the conflict by:
 
 1. **Preserving both versions** to prevent data loss
-2. **Downloading the remote version** to a new conflict file with naming pattern: `filename (conflict YYYYMMDD-HHMMSS).md`
+2. **Downloading the remote version** to a new conflict file with naming pattern: `filename (conflict YYYYMMDD-HHMMSS).ext`
 3. **Uploading the local version** to S3, overwriting the remote file
 4. **Notifying the user** about the conflict resolution
 
@@ -67,6 +67,8 @@ This ensures your latest local changes remain as the "primary" version while pre
 **Example conflict file naming:**
 - Original file: `Meeting Notes.md`
 - Conflict file: `Meeting Notes (conflict 20241022-143055).md`
+- Original file: `diagram.png`
+- Conflict file: `diagram (conflict 20241022-143055).png`
 
 ### 6. File is identical locally and remotely
 **Action: Do nothing**
@@ -83,8 +85,8 @@ When both files exist and neither has been modified since the last sync, no acti
 
 ## File Filtering
 
-The sync process only includes:
-- **Markdown files** (`.md` extension)
+The sync process includes:
+- **All file types** (markdown, images, PDFs, attachments, etc.)
 - **Files and folders that don't start with a dot** (hidden files/folders are ignored)
 
 ## Technical Implementation Details

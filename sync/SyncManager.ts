@@ -150,9 +150,8 @@ export class SyncManager {
 	private getLocalFiles(): Map<string, TFile> {
 		const localFiles = new Map<string, TFile>();
 		this.app.vault.getFiles().forEach((file) => {
-			// Ignore non-markdown files and files/folders starting with a dot.
+			// Ignore files/folders starting with a dot.
 			if (
-				file.extension === "md" &&
 				!file.path.split("/").some((part) => part.startsWith("."))
 			) {
 				localFiles.set(file.path, file);
@@ -186,11 +185,9 @@ export class SyncManager {
 		originalPath: string,
 		conflictDate: Date,
 	): string {
-		const extension = ".md";
-		const baseName = originalPath.substring(
-			0,
-			originalPath.length - extension.length,
-		);
+		const lastDotIndex = originalPath.lastIndexOf(".");
+		const extension = lastDotIndex > -1 ? originalPath.substring(lastDotIndex) : "";
+		const baseName = lastDotIndex > -1 ? originalPath.substring(0, lastDotIndex) : originalPath;
 		const timestamp =
 			conflictDate.getFullYear().toString() +
 			(conflictDate.getMonth() + 1).toString().padStart(2, "0") +
