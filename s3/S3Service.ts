@@ -100,7 +100,11 @@ export class S3Service {
 						return;
 
 					const relativePath = this.getLocalPath(obj.Key);
-					remoteFiles.set(relativePath, obj);
+					
+					// Apply exclusion rule: ignore files/folders starting with a dot
+					if (!this.shouldIgnoreFile(relativePath)) {
+						remoteFiles.set(relativePath, obj);
+					}
 				}
 			});
 
@@ -154,5 +158,13 @@ export class S3Service {
 		});
 
 		await this.client!.send(command);
+	}
+
+	/**
+	 * Checks if a file should be ignored based on exclusion rules
+	 */
+	private shouldIgnoreFile(filePath: string): boolean {
+		// Ignore files/folders beginning with a dot
+		return filePath.split("/").some((part) => part.startsWith("."));
 	}
 }

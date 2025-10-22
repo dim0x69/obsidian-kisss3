@@ -1,14 +1,28 @@
-import { App, Notice, TFile } from "obsidian";
+import { App, Notice, TFile, TFolder } from "obsidian";
 import { S3Service } from "../s3/S3Service";
 import S3SyncPlugin from "../main";
 import { S3SyncSettings } from "../settings";
 import { _Object as S3Object } from "@aws-sdk/client-s3";
+import { SyncStateManager } from "./SyncStateManager";
+import { SyncDecisionEngine } from "./SyncDecisionEngine";
+import { 
+	SyncAction, 
+	FileSyncDecision, 
+	LocalFilesMap, 
+	RemoteFilesMap, 
+	StateFilesMap,
+	LocalFile,
+	RemoteFile,
+	SyncState
+} from "./SyncTypes";
 
 // Contains the core logic for comparing and synchronizing files.
 // https://docs.obsidian.md/Reference/TypeScript+API/FileStats
 
 export class SyncManager {
 	private s3Service: S3Service;
+	private stateManager: SyncStateManager;
+	private decisionEngine: SyncDecisionEngine;
 	private running = false;
 
 	constructor(
@@ -16,6 +30,8 @@ export class SyncManager {
 		private plugin: S3SyncPlugin,
 	) {
 		this.s3Service = new S3Service(this.plugin.settings);
+		this.stateManager = new SyncStateManager(this.app);
+		this.decisionEngine = new SyncDecisionEngine();
 	}
 
 	updateSettings(settings: S3SyncSettings) {
@@ -35,150 +51,271 @@ export class SyncManager {
 		}
 
 		this.running = true;
-		const syncNotice = new Notice("S3 Sync: Starting sync...", 0); // Notice stays until hidden
+		const syncNotice = new Notice("S3 Sync: Starting sync...", 0);
 
 		try {
-			const lastSyncTimestamp = this.plugin.settings.lastSyncTimestamp;
-			const newSyncTimestamp = Date.now();
+			// Step 1: Generate the three maps (Local, Remote, State)
+			syncNotice.setMessage("S3 Sync: Generating file maps...");
+			const [localFiles, remoteFiles, stateFiles] = await Promise.all([
+				this.generateLocalFilesMap(),
+				this.generateRemoteFilesMap(),
+				this.generateStateFilesMap()
+			]);
 
-			// Step 1: Get local and remote file lists
-			syncNotice.setMessage(
-				"S3 Sync: Fetching local and remote file lists...",
+			// Step 2: Generate sync decisions
+			syncNotice.setMessage("S3 Sync: Analyzing files...");
+			const decisions = this.decisionEngine.generateSyncDecisions(
+				localFiles, 
+				remoteFiles, 
+				stateFiles
 			);
-			const localFiles = this.getLocalFiles();
-			const remoteFiles = await this.s3Service.listRemoteFiles();
 
-			const processedRemotePaths = new Set<string>();
+			// Step 3: Execute sync actions in safe order (downloads → uploads → deletes)
+			await this.executeSyncDecisions(decisions, syncNotice);
 
-			// Step 2: Process local files (check for uploads and conflicts)
-			syncNotice.setMessage(
-				"S3 Sync: Comparing local files to remote...",
-			);
-			for (const localFile of localFiles.values()) {
-				const remoteFile = remoteFiles.get(localFile.path);
-				processedRemotePaths.add(localFile.path);
+			// Step 4: Rescan and save new state (only after successful sync)
+			syncNotice.setMessage("S3 Sync: Updating state...");
+			await this.updateSyncState();
 
-				if (!remoteFile) {
-					// File exists locally, but not remotely -> Upload
-					syncNotice.setMessage(
-						`S3 Sync: Uploading ${localFile.path}`,
-					);
-					const content = await this.app.vault.readBinary(localFile);
-					await this.s3Service.uploadFile(localFile, content);
-				} else {
-					const localMtime = localFile.stat.mtime;
-					const remoteMtime = remoteFile.LastModified!.getTime();
-
-					const localChanged = localMtime > lastSyncTimestamp;
-					const remoteChanged = remoteMtime > lastSyncTimestamp;
-
-					if (localChanged && remoteChanged) {
-						// Conflict: Both files have changed since the last sync
-						syncNotice.setMessage(
-							`S3 Sync: Conflict detected for ${localFile.path}.`,
-						);
-						await this.handleConflict(localFile, remoteFile);
-					} else if (localMtime > remoteMtime) {
-						// Local is newer -> Upload
-						syncNotice.setMessage(
-							`S3 Sync: Uploading update for ${localFile.path}`,
-						);
-						const content = await this.app.vault.readBinary(localFile);
-						await this.s3Service.uploadFile(localFile, content);
-					} else if (remoteMtime > localMtime) {
-						// Remote is newer -> Download
-						syncNotice.setMessage(
-							`S3 Sync: Downloading update for ${localFile.path}`,
-						);
-						const content =
-							await this.s3Service.downloadFile(remoteFile);
-						await this.app.vault.modifyBinary(localFile, content, {
-							mtime: remoteMtime,
-						});
-					}
-					// If times are equal or no changes since last sync, do nothing.
-				}
-			}
-
-			// Step 3: Process remote files not found locally (handle downloads)
-			syncNotice.setMessage("S3 Sync: Checking for new remote files...");
-			for (const [path, remoteFile] of remoteFiles.entries()) {
-				if (!processedRemotePaths.has(path)) {
-					// File exists remotely, but not locally -> Download
-					syncNotice.setMessage(
-						`S3 Sync: Downloading new file ${path}`,
-					);
-					const content =
-						await this.s3Service.downloadFile(remoteFile);
-					const folderPath = path.substring(0, path.lastIndexOf("/"));
-					if (folderPath) {
-						try {
-							// This check avoids an error if the folder already exists.
-							if (
-								!this.app.vault.getAbstractFileByPath(
-									folderPath,
-								)
-							) {
-								await this.app.vault.createFolder(folderPath);
-							}
-						} catch (e) {
-							/* Folder likely created between check and call, ignore */
-						}
-					}
-					await this.app.vault.createBinary(path, content, {
-						mtime: remoteFile.LastModified!.getTime(),
-					});
-				}
-			}
-
-			// Step 4: Finalize sync by updating the timestamp
-			this.plugin.settings.lastSyncTimestamp = newSyncTimestamp;
-			await this.plugin.saveSettings();
 			syncNotice.setMessage("S3 Sync: Sync complete!");
 		} catch (error) {
 			console.error("S3 Sync Error:", error);
 			syncNotice.setMessage(
 				`S3 Sync: Error during sync. Check console for details.`,
 			);
+			// Don't update state on error
 		} finally {
 			this.running = false;
-			// Hide the notice after 5 seconds
 			setTimeout(() => syncNotice.hide(), 5000);
 		}
 	}
 
-	private getLocalFiles(): Map<string, TFile> {
-		const localFiles = new Map<string, TFile>();
+	/**
+	 * Generates local files map with exclusion rules applied
+	 */
+	private async generateLocalFilesMap(): Promise<LocalFilesMap> {
+		const localFiles = new Map<string, LocalFile>();
+		
 		this.app.vault.getFiles().forEach((file) => {
-			// Ignore files/folders starting with a dot.
-			if (
-				!file.path.split("/").some((part) => part.startsWith("."))
-			) {
-				localFiles.set(file.path, file);
+			// Apply exclusion rule: ignore files/folders starting with a dot
+			if (!this.shouldIgnoreFile(file.path)) {
+				localFiles.set(file.path, {
+					path: file.path,
+					mtime: file.stat.mtime
+				});
 			}
 		});
+		
 		return localFiles;
 	}
 
-	private async handleConflict(localFile: TFile, remoteFile: S3Object) {
-		// Strategy: Download remote content to a new conflict file, then upload local content to the original path.
-		const remoteContent = await this.s3Service.downloadFile(remoteFile);
+	/**
+	 * Generates remote files map with exclusion rules applied
+	 */
+	private async generateRemoteFilesMap(): Promise<RemoteFilesMap> {
+		const remoteFiles = new Map<string, RemoteFile>();
+		const s3Objects = await this.s3Service.listRemoteFiles();
+
+		for (const [path, s3Object] of s3Objects.entries()) {
+			// Apply exclusion rule: ignore files/folders starting with a dot
+			if (!this.shouldIgnoreFile(path)) {
+				remoteFiles.set(path, {
+					path: path,
+					mtime: s3Object.LastModified!.getTime(),
+					key: s3Object.Key!
+				});
+			}
+		}
+
+		return remoteFiles;
+	}
+
+	/**
+	 * Generates state files map from the state file
+	 */
+	private async generateStateFilesMap(): Promise<StateFilesMap> {
+		const stateFiles = new Map<string, string>();
+		const syncState = await this.stateManager.loadState();
+
+		for (const [filePath, mtime] of Object.entries(syncState)) {
+			// Apply exclusion rule: ignore files/folders starting with a dot
+			if (!this.shouldIgnoreFile(filePath)) {
+				stateFiles.set(filePath, mtime);
+			}
+		}
+
+		return stateFiles;
+	}
+
+	/**
+	 * Checks if a file should be ignored based on exclusion rules
+	 */
+	private shouldIgnoreFile(filePath: string): boolean {
+		// Ignore files/folders beginning with a dot
+		return filePath.split("/").some((part) => part.startsWith("."));
+	}
+
+	/**
+	 * Executes sync decisions in safe order: downloads → uploads → deletes
+	 */
+	private async executeSyncDecisions(
+		decisions: FileSyncDecision[], 
+		syncNotice: Notice
+	): Promise<void> {
+		const downloads = decisions.filter(d => d.action === SyncAction.DOWNLOAD);
+		const uploads = decisions.filter(d => d.action === SyncAction.UPLOAD);
+		const deletes = decisions.filter(d => 
+			d.action === SyncAction.DELETE_LOCAL || d.action === SyncAction.DELETE_REMOTE
+		);
+		const conflicts = decisions.filter(d => d.action === SyncAction.CONFLICT);
+
+		// Execute downloads first
+		for (const decision of downloads) {
+			syncNotice.setMessage(`S3 Sync: Downloading ${decision.filePath}`);
+			await this.executeDownload(decision);
+		}
+
+		// Execute uploads second
+		for (const decision of uploads) {
+			syncNotice.setMessage(`S3 Sync: Uploading ${decision.filePath}`);
+			await this.executeUpload(decision);
+		}
+
+		// Execute deletes last
+		for (const decision of deletes) {
+			syncNotice.setMessage(`S3 Sync: Deleting ${decision.filePath}`);
+			await this.executeDelete(decision);
+		}
+
+		// Handle conflicts
+		for (const decision of conflicts) {
+			syncNotice.setMessage(`S3 Sync: Resolving conflict for ${decision.filePath}`);
+			await this.handleConflict(decision);
+		}
+	}
+
+	/**
+	 * Executes a download action
+	 */
+	private async executeDownload(decision: FileSyncDecision): Promise<void> {
+		// Get the remote file info
+		const remoteFiles = await this.generateRemoteFilesMap();
+		const remoteFile = remoteFiles.get(decision.filePath);
+		
+		if (!remoteFile) {
+			throw new Error(`Remote file not found: ${decision.filePath}`);
+		}
+
+		// Create an S3Object for compatibility with existing S3Service
+		const s3Object: S3Object = {
+			Key: remoteFile.key,
+			LastModified: new Date(remoteFile.mtime)
+		};
+
+		const content = await this.s3Service.downloadFile(s3Object);
+		
+		// Ensure parent folder exists
+		await this.ensureFolderExists(decision.filePath);
+		
+		// Check if local file exists
+		const localFile = this.app.vault.getAbstractFileByPath(decision.filePath);
+		
+		if (localFile && !(localFile instanceof TFolder)) {
+			// File exists, modify it
+			await this.app.vault.modifyBinary(localFile as TFile, content, {
+				mtime: remoteFile.mtime
+			});
+		} else {
+			// File doesn't exist, create it
+			await this.app.vault.createBinary(decision.filePath, content, {
+				mtime: remoteFile.mtime
+			});
+		}
+	}
+
+	/**
+	 * Executes an upload action
+	 */
+	private async executeUpload(decision: FileSyncDecision): Promise<void> {
+		const localFile = this.app.vault.getAbstractFileByPath(decision.filePath);
+		
+		if (!localFile || localFile instanceof TFolder) {
+			throw new Error(`Local file not found: ${decision.filePath}`);
+		}
+
+		const content = await this.app.vault.readBinary(localFile as TFile);
+		await this.s3Service.uploadFile(localFile as TFile, content);
+	}
+
+	/**
+	 * Executes a delete action  
+	 */
+	private async executeDelete(decision: FileSyncDecision): Promise<void> {
+		if (decision.action === SyncAction.DELETE_LOCAL) {
+			const localFile = this.app.vault.getAbstractFileByPath(decision.filePath);
+			if (localFile && !(localFile instanceof TFolder)) {
+				await this.app.vault.delete(localFile);
+			}
+		} else if (decision.action === SyncAction.DELETE_REMOTE) {
+			await this.s3Service.deleteRemoteFile(decision.filePath);
+		}
+	}
+
+	/**
+	 * Handles conflict resolution
+	 */
+	private async handleConflict(decision: FileSyncDecision): Promise<void> {
+		// For now, use the same strategy as before: keep local version, save remote as conflict file
+		const localFile = this.app.vault.getAbstractFileByPath(decision.filePath) as TFile;
+		const remoteFiles = await this.generateRemoteFilesMap();
+		const remoteFile = remoteFiles.get(decision.filePath);
+		
+		if (!localFile || !remoteFile) {
+			console.warn(`S3 Sync: Cannot resolve conflict for ${decision.filePath} - missing file`);
+			return;
+		}
+
+		// Create S3Object for compatibility
+		const s3Object: S3Object = {
+			Key: remoteFile.key,
+			LastModified: new Date(remoteFile.mtime)
+		};
+
+		const remoteContent = await this.s3Service.downloadFile(s3Object);
 		const conflictFileName = this.getConflictFileName(
-			localFile.path,
-			new Date(remoteFile.LastModified!.getTime()),
+			decision.filePath,
+			new Date(remoteFile.mtime)
 		);
 
-		// Save the remote version with a new name.
+		// Save the remote version with a new name
 		await this.app.vault.createBinary(conflictFileName, remoteContent, {
-			mtime: remoteFile.LastModified!.getTime(),
+			mtime: remoteFile.mtime
 		});
+
 		new Notice(
-			`S3 Sync: Saved remote version of ${localFile.basename} as ${conflictFileName}`,
+			`S3 Sync: Saved remote version as ${conflictFileName}`,
 		);
 
-		// Upload the local version to overwrite the remote original, ensuring the user's latest local changes are preserved in the cloud.
+		// Upload the local version to overwrite the remote
 		const localContent = await this.app.vault.readBinary(localFile);
 		await this.s3Service.uploadFile(localFile, localContent);
+	}
+
+	/**
+	 * Ensures the parent folder exists for a file path
+	 */
+	private async ensureFolderExists(filePath: string): Promise<void> {
+		const folderPath = filePath.substring(0, filePath.lastIndexOf("/"));
+		if (folderPath) {
+			try {
+				const existingFolder = this.app.vault.getAbstractFileByPath(folderPath);
+				if (!existingFolder) {
+					await this.app.vault.createFolder(folderPath);
+				}
+			} catch (e) {
+				// Folder likely created between check and call, ignore
+			}
+		}
 	}
 
 	private getConflictFileName(
@@ -201,6 +338,75 @@ export class SyncManager {
 	}
 
 
+
+	/**
+	 * Updates the sync state after successful sync
+	 */
+	private async updateSyncState(): Promise<void> {
+		// Rescan local and remote files to get current state
+		const [localFiles, remoteFiles] = await Promise.all([
+			this.generateLocalFilesMap(),
+			this.generateRemoteFilesMap()
+		]);
+
+		// Build new state map
+		const newState: SyncState = {};
+
+		// Add local files to state
+		for (const [path, localFile] of localFiles.entries()) {
+			newState[path] = localFile.mtime.toString();
+		}
+
+		// Add remote files to state (use remote mtime if file exists on both sides)
+		for (const [path, remoteFile] of remoteFiles.entries()) {
+			const localFile = localFiles.get(path);
+			if (localFile) {
+				// File exists locally and remotely, use the newer timestamp
+				const newerMtime = Math.max(localFile.mtime, remoteFile.mtime);
+				newState[path] = newerMtime.toString();
+			} else {
+				// File only exists remotely
+				newState[path] = remoteFile.mtime.toString();
+			}
+		}
+
+		// Save the new state
+		await this.stateManager.saveState(newState);
+
+		// Optional: Prune empty folders
+		await this.pruneEmptyFolders();
+	}
+
+	/**
+	 * Prunes empty folders after sync (optional feature)
+	 */
+	private async pruneEmptyFolders(): Promise<void> {
+		try {
+			const allFiles = this.app.vault.getAllLoadedFiles();
+			const folders = allFiles.filter(f => f instanceof TFolder) as TFolder[];
+			
+			// Sort by depth (deepest first) to prune from bottom up
+			folders.sort((a, b) => b.path.split("/").length - a.path.split("/").length);
+
+			for (const folder of folders) {
+				if (folder.children && folder.children.length === 0) {
+					// Don't delete the plugin's own folder or system folders
+					if (!folder.path.startsWith(".obsidian") || folder.path === ".obsidian/plugins/kisss3") {
+						continue;
+					}
+					
+					try {
+						await this.app.vault.delete(folder);
+						console.log(`S3 Sync: Pruned empty folder: ${folder.path}`);
+					} catch (e) {
+						// Ignore errors when pruning folders
+					}
+				}
+			}
+		} catch (error) {
+			console.warn("S3 Sync: Error during folder pruning:", error);
+		}
+	}
 
 	async handleLocalDelete(path: string): Promise<void> {
 		if (!this.s3Service.isConfigured()) {
