@@ -8,6 +8,7 @@ import {
 	DeleteObjectCommand,
 	_Object as S3Object, // Alias to avoid conflict with Object
 } from "@aws-sdk/client-s3";
+import * as mimeTypes from "mime-types";
 import { S3SyncSettings } from "../settings";
 
 // Manages all interactions with the S3-compatible object storage.
@@ -140,56 +141,8 @@ export class S3Service {
 	}
 
 	private getMimeType(filePath: string): string {
-		const extension = filePath.split('.').pop()?.toLowerCase();
-		
-		const mimeTypes: { [key: string]: string } = {
-			// Text files
-			'md': 'text/markdown',
-			'txt': 'text/plain',
-			'json': 'application/json',
-			'js': 'application/javascript',
-			'ts': 'application/typescript',
-			'css': 'text/css',
-			'html': 'text/html',
-			'xml': 'application/xml',
-			'csv': 'text/csv',
-			
-			// Images
-			'png': 'image/png',
-			'jpg': 'image/jpeg',
-			'jpeg': 'image/jpeg',
-			'gif': 'image/gif',
-			'bmp': 'image/bmp',
-			'svg': 'image/svg+xml',
-			'webp': 'image/webp',
-			'ico': 'image/x-icon',
-			
-			// Documents
-			'pdf': 'application/pdf',
-			'doc': 'application/msword',
-			'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-			'xls': 'application/vnd.ms-excel',
-			'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-			'ppt': 'application/vnd.ms-powerpoint',
-			'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-			
-			// Archives
-			'zip': 'application/zip',
-			'rar': 'application/vnd.rar',
-			'7z': 'application/x-7z-compressed',
-			'tar': 'application/x-tar',
-			'gz': 'application/gzip',
-			
-			// Media
-			'mp3': 'audio/mpeg',
-			'mp4': 'video/mp4',
-			'wav': 'audio/wav',
-			'avi': 'video/x-msvideo',
-			'mov': 'video/quicktime',
-			'mkv': 'video/x-matroska',
-		};
-		
-		return extension ? (mimeTypes[extension] || 'application/octet-stream') : 'application/octet-stream';
+		const mimeType = mimeTypes.lookup(filePath);
+		return mimeType || 'application/octet-stream';
 	}
 
 	async deleteRemoteFile(path: string): Promise<void> {
