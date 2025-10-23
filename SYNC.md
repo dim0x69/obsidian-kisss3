@@ -4,19 +4,41 @@ This document describes the file synchronization behavior between your local Obs
 
 ## Sync Process Overview
 
-The plugin performs bidirectional synchronization by comparing file states between local and remote storage. Each sync operation compares modification timestamps and determines the appropriate action based on when files were last changed relative to the previous sync timestamp.
+The plugin performs three-source synchronization by comparing file states between **Local** vault files, **Remote** S3 objects, and a **State** file (`.obsidian/plugins/kisss3/sync-state.json`) that tracks the last known synchronized state of each file. This approach provides more robust conflict detection and resolution compared to simple timestamp-based sync.
 
-## Sync Situations and Actions
+### Three-Source Algorithm
 
-| Situation | Local File | Remote File | Local Modified Since Last Sync | Remote Modified Since Last Sync | Action Taken |
-|-----------|------------|-------------|--------------------------------|--------------------------------|--------------|
-| 1. Remote only | ❌ Not exists | ✅ Exists | N/A | N/A | **Download** remote file |
-| 2. Local only | ✅ Exists | ❌ Not exists | N/A | N/A | **Upload** local file |
-| 3. Local modified | ✅ Exists | ✅ Exists | ✅ Yes | ❌ No | **Upload** local file |
-| 4. Remote modified | ✅ Exists | ✅ Exists | ❌ No | ✅ Yes | **Download** remote file |
-| 5. Both modified (conflict) | ✅ Exists | ✅ Exists | ✅ Yes | ✅ Yes | **Keep both** - rename remote copy |
-| 6. No changes | ✅ Exists | ✅ Exists | ❌ No | ❌ No | **Do nothing** |
-| 7. Explicit delete | ❌ Deleted locally | ✅ Exists | N/A | N/A | **Delete** from remote |
+1. **Local Map**: Generated from all vault files (excluding files/folders starting with `.`)
+2. **Remote Map**: Generated from all S3 objects (excluding files/folders starting with `.`) 
+3. **State Map**: Loaded from the sync state file containing previous sync state
+
+For each unique file path across all three sources, the algorithm:
+- Categorizes each file as **Created**, **Modified**, **Deleted**, or **Unchanged** compared to the state
+- Applies a decision matrix to determine the appropriate action
+- Executes actions in safe order: downloads → uploads → deletes
+- Updates the state file only after successful completion
+
+## Sync Decision Matrix
+
+The three-source algorithm categorizes each file's status (Created/Modified/Deleted/Unchanged) by comparing current Local and Remote states against the previous State, then applies this decision matrix:
+
+| Local Status | Remote Status | Action Taken | Description |
+|-------------|---------------|--------------|-------------|
+| **Created** | **Unchanged** | **Upload** | New local file |
+| **Modified** | **Unchanged** | **Upload** | Local file was modified |
+| **Unchanged** | **Created** | **Download** | New remote file |
+| **Unchanged** | **Modified** | **Download** | Remote file was modified |
+| **Created/Modified** | **Created/Modified** | **Conflict Resolution** | Both sides changed |
+| **Deleted** | **Modified/Created** | **Download** | Modification beats deletion |
+| **Modified/Created** | **Deleted** | **Upload** | Modification beats deletion |
+| **Deleted** | **Deleted** | **Do Nothing** | Both sides deleted |
+| **Unchanged** | **Unchanged** | **Do Nothing** | No changes |
+
+### Conflict Resolution Rules
+
+1. **Modification vs. Deletion**: Modification wins (upload or download accordingly)
+2. **Creation vs. Deletion**: Creation wins (upload or download accordingly)  
+3. **All other conflicts**: Newest file wins by modification time (upload or download)
 
 ## Detailed Situation Descriptions
 
@@ -91,11 +113,61 @@ The sync process includes:
 
 ## Technical Implementation Details
 
-- **Timestamp comparison**: The plugin uses millisecond precision timestamps for modification time comparisons
-- **Last sync tracking**: A `lastSyncTimestamp` is stored in plugin settings and updated after each successful sync
+- **State File**: Sync state is stored in `.obsidian/plugins/kisss3/sync-state.json` as a JSON map of `{ "file/path": "mtime_timestamp" }`
+- **Timestamp precision**: Uses millisecond precision Unix timestamps for modification time comparisons
+- **Timestamp tolerance**: Uses 2-second tolerance when comparing timestamps to account for different file system precisions (S3, NTFS, APFS, ext4) and prevent false modifications
+- **Exclusion rules**: Files/folders beginning with a dot (`.`) are ignored in all sync operations
+- **Safe execution order**: Actions are executed in order: downloads → uploads → deletes to prevent data loss
+- **Atomic state updates**: State file is only updated after successful completion of all sync actions
 - **Folder creation**: Missing folder structures are automatically created when downloading files
-- **Content encoding**: Files are handled as UTF-8 encoded text
+- **Folder pruning**: Empty folders are optionally pruned after sync completion
 - **S3 prefixes**: Remote file paths respect the configured S3 prefix setting
+- **Error handling**: Any sync error aborts the operation and prevents state file updates
+
+## Initial Sync Scenarios
+
+The three-source algorithm handles initial synchronization scenarios gracefully when no previous sync state exists:
+
+### Empty Vault + Existing Remote Storage
+
+When syncing a **new empty vault** with an **existing S3 bucket containing files** for the first time:
+
+1. **Local Map**: Empty (no vault files)
+2. **Remote Map**: Contains existing S3 files 
+3. **State Map**: Empty (no previous sync state)
+
+**Behavior:**
+- For each remote file: `Local: UNCHANGED, Remote: CREATED` → **Action: DOWNLOAD**
+- All existing remote files are downloaded to the local vault
+- Folder structures are created automatically as needed
+- After successful sync, state file is created with all downloaded files
+
+**Result:** The vault becomes a complete copy of the remote storage.
+
+### Existing Vault + Empty Remote Storage  
+
+When syncing an **existing vault with files** to a **new empty S3 bucket** for the first time:
+
+1. **Local Map**: Contains existing vault files
+2. **Remote Map**: Empty (no S3 files)
+3. **State Map**: Empty (no previous sync state) 
+
+**Behavior:**
+- For each local file: `Local: CREATED, Remote: UNCHANGED` → **Action: UPLOAD**
+- All existing local files are uploaded to S3
+- S3 folder structures are created automatically (no explicit folder objects needed)
+- After successful sync, state file is created with all uploaded files
+
+**Result:** The remote storage becomes a complete copy of the vault.
+
+### Both Empty (New Setup)
+
+When both vault and remote storage are empty:
+- No files to sync in either direction
+- Empty state file is created 
+- Ready for future synchronization as files are added
+
+These scenarios demonstrate the algorithm's ability to handle initial synchronization robustly without data loss or conflicts.
 
 ## Sync Frequency
 

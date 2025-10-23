@@ -8,7 +8,7 @@ export interface S3SyncSettings {
 	remotePrefix: string;
 	syncIntervalMinutes: number;
 	enableAutomaticSync: boolean;
-	lastSyncTimestamp: number;
+	// lastSyncTimestamp removed - now using sync-state.json file
 }
 
 // --- Default Settings ---
@@ -21,5 +21,5 @@ export const DEFAULT_SETTINGS: S3SyncSettings = {
 	remotePrefix: "",
 	syncIntervalMinutes: 15,
 	enableAutomaticSync: false,
-	lastSyncTimestamp: 0,
+	// lastSyncTimestamp removed - now using sync-state.json file
 };
