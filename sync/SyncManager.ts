@@ -396,10 +396,10 @@ export class SyncManager {
 	 * Updates the sync state after successful sync
 	 */
 	private async updateSyncState(): Promise<void> {
-		// Get current state from cache (or generate fresh if cache is cleared)
+		// Re-scan local and remote to get fresh state after sync actions
 		const [localFiles, remoteFiles] = await Promise.all([
-			this.getLocalFilesMap(),
-			this.getRemoteFilesMap()
+			this.generateLocalFilesMap(),
+			this.generateRemoteFilesMap()
 		]);
 
 		// Build new state map
