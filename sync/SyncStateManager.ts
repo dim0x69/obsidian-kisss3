@@ -19,7 +19,7 @@ export class SyncStateManager {
 		try {
 			// First try to load from plugin data API
 			const pluginData = await this.plugin.loadData();
-			if (pluginData && pluginData[this.SYNC_STATE_KEY]) {
+			if (pluginData?.[this.SYNC_STATE_KEY]) {
 				return pluginData[this.SYNC_STATE_KEY] as SyncState;
 			}
 
@@ -52,13 +52,14 @@ export class SyncStateManager {
 			console.info("Saving sync state...");
 			
 			// Load existing plugin data to preserve other data
-			const pluginData = await this.plugin.loadData() || {};
+			const pluginData = await this.plugin.loadData();
+			const safePluginData = pluginData ?? {};
 			
 			// Update sync state in plugin data
-			pluginData[this.SYNC_STATE_KEY] = state;
+			safePluginData[this.SYNC_STATE_KEY] = state;
 			
 			// Save back to plugin data API
-			await this.plugin.saveData(pluginData);
+			await this.plugin.saveData(safePluginData);
 			
 			console.info("S3 Sync: Successfully saved sync state to plugin data API");
 		} catch (error) {
