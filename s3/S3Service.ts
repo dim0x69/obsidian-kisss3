@@ -131,7 +131,7 @@ export class S3Service {
 		await this.client!.send(command);
 	}
 
-	async downloadFile(s3Object: S3Object): Promise<ArrayBuffer> {
+	async downloadFile(s3Object: S3Object): Promise<ArrayBufferLike> {
 		if (!this.isConfigured()) throw new Error("S3 client not configured.");
 
 		const command = new GetObjectCommand({
