@@ -123,6 +123,51 @@ The sync process includes:
 - **S3 prefixes**: Remote file paths respect the configured S3 prefix setting
 - **Error handling**: Any sync error aborts the operation and prevents state file updates
 
+## Initial Sync Scenarios
+
+The three-source algorithm handles initial synchronization scenarios gracefully when no previous sync state exists:
+
+### Empty Vault + Existing Remote Storage
+
+When syncing a **new empty vault** with an **existing S3 bucket containing files** for the first time:
+
+1. **Local Map**: Empty (no vault files)
+2. **Remote Map**: Contains existing S3 files 
+3. **State Map**: Empty (no previous sync state)
+
+**Behavior:**
+- For each remote file: `Local: UNCHANGED, Remote: CREATED` → **Action: DOWNLOAD**
+- All existing remote files are downloaded to the local vault
+- Folder structures are created automatically as needed
+- After successful sync, state file is created with all downloaded files
+
+**Result:** The vault becomes a complete copy of the remote storage.
+
+### Existing Vault + Empty Remote Storage  
+
+When syncing an **existing vault with files** to a **new empty S3 bucket** for the first time:
+
+1. **Local Map**: Contains existing vault files
+2. **Remote Map**: Empty (no S3 files)
+3. **State Map**: Empty (no previous sync state) 
+
+**Behavior:**
+- For each local file: `Local: CREATED, Remote: UNCHANGED` → **Action: UPLOAD**
+- All existing local files are uploaded to S3
+- S3 folder structures are created automatically (no explicit folder objects needed)
+- After successful sync, state file is created with all uploaded files
+
+**Result:** The remote storage becomes a complete copy of the vault.
+
+### Both Empty (New Setup)
+
+When both vault and remote storage are empty:
+- No files to sync in either direction
+- Empty state file is created 
+- Ready for future synchronization as files are added
+
+These scenarios demonstrate the algorithm's ability to handle initial synchronization robustly without data loss or conflicts.
+
 ## Sync Frequency
 
 The plugin supports multiple synchronization modes:
