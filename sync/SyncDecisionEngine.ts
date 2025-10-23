@@ -7,7 +7,7 @@ import {
 	LocalFilesMap, 
 	RemoteFilesMap, 
 	StateFilesMap,
-	isNewerTimestamp
+	SyncFileState
 } from "./SyncTypes";
 
 /**
@@ -55,11 +55,11 @@ export class SyncDecisionEngine {
 	): FileSyncDecision {
 		const localFile = localFiles.get(filePath);
 		const remoteFile = remoteFiles.get(filePath);
-		const stateTimestamp = stateFiles.get(filePath);
+		const syncState = stateFiles.get(filePath);
 
 		// Determine status for local and remote
-		const localStatus = this.determineFileStatus(localFile, stateTimestamp);
-		const remoteStatus = this.determineFileStatus(remoteFile, stateTimestamp);
+		const localStatus = this.determineFileStatus(localFile, syncState, true);
+		const remoteStatus = this.determineFileStatus(remoteFile, syncState, false);
 
 		// Apply decision matrix
 		const action = this.applyDecisionMatrix(localStatus, remoteStatus, localFile, remoteFile);
@@ -79,23 +79,26 @@ export class SyncDecisionEngine {
 	 */
 	private determineFileStatus(
 		file: LocalFile | RemoteFile | undefined, 
-		stateTimestamp: string | undefined
+		syncState: SyncFileState | undefined,
+		isLocal: boolean
 	): FileStatus {
-		if (!file && !stateTimestamp) {
+		const stateTime = isLocal ? syncState?.localMtime : syncState?.remoteMtime;
+		
+		if (!file && !stateTime) {
 			return FileStatus.UNCHANGED; // File never existed
 		}
 		
-		if (!file && stateTimestamp) {
+		if (!file && stateTime) {
 			return FileStatus.DELETED; // File existed in state but doesn't exist now
 		}
 		
-		if (file && !stateTimestamp) {
+		if (file && !stateTime) {
 			return FileStatus.CREATED; // File exists now but wasn't in state
 		}
 		
-		if (file && stateTimestamp) {
-			const stateTime = parseInt(stateTimestamp);
-			if (isNewerTimestamp(file.mtime, stateTime)) {
+		if (file && stateTime) {
+			// Compare exact timestamps - no tolerance needed since we control both values
+			if (file.mtime > stateTime) {
 				return FileStatus.MODIFIED; // File was modified since state
 			}
 			return FileStatus.UNCHANGED; // File hasn't changed since state
@@ -184,12 +187,12 @@ export class SyncDecisionEngine {
 
 		// All other conflicts: Newest wins by mtime
 		if (localFile && remoteFile) {
-			if (isNewerTimestamp(localFile.mtime, remoteFile.mtime)) {
+			if (localFile.mtime > remoteFile.mtime) {
 				return SyncAction.UPLOAD;
-			} else if (isNewerTimestamp(remoteFile.mtime, localFile.mtime)) {
+			} else if (remoteFile.mtime > localFile.mtime) {
 				return SyncAction.DOWNLOAD;
 			}
-			// If timestamps are equal within tolerance, no action needed
+			// If timestamps are exactly equal, no action needed
 		}
 
 		// If we can't determine, flag as conflict for manual resolution

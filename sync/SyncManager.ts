@@ -14,7 +14,7 @@ import {
 	LocalFile,
 	RemoteFile,
 	SyncState,
-	isNewerTimestamp
+	SyncFileState
 } from "./SyncTypes";
 
 // Contains the core logic for comparing and synchronizing files.
@@ -187,13 +187,20 @@ export class SyncManager {
 	 * Generates state files map from the state file
 	 */
 	private async generateStateFilesMap(): Promise<StateFilesMap> {
-		const stateFiles = new Map<string, string>();
+		const stateFiles = new Map<string, SyncFileState>();
 		const syncState = await this.stateManager.loadState();
 
-		for (const [filePath, mtime] of Object.entries(syncState)) {
+		for (const [filePath, fileState] of Object.entries(syncState)) {
 			// Apply exclusion rule: ignore files/folders starting with a dot
 			if (!this.shouldIgnoreFile(filePath)) {
-				stateFiles.set(filePath, mtime);
+				// Handle both old format (string) and new format (SyncFileState)
+				if (typeof fileState === 'string') {
+					// Legacy format - treat as local mtime
+					stateFiles.set(filePath, { localMtime: parseInt(fileState) });
+				} else {
+					// New format
+					stateFiles.set(filePath, fileState);
+				}
 			}
 		}
 
@@ -402,31 +409,23 @@ export class SyncManager {
 			this.generateRemoteFilesMap()
 		]);
 
-		// Build new state map
+		// Build new state map with both local and remote timestamps
 		const newState: SyncState = {};
 
-		// Add local files to state
-		for (const [path, localFile] of localFiles.entries()) {
-			newState[path] = localFile.mtime.toString();
-		}
+		// Get all unique file paths
+		const allPaths = new Set([
+			...localFiles.keys(),
+			...remoteFiles.keys()
+		]);
 
-		// Add remote files to state (use remote mtime if file exists on both sides)
-		for (const [path, remoteFile] of remoteFiles.entries()) {
+		for (const path of allPaths) {
 			const localFile = localFiles.get(path);
-			if (localFile) {
-				// File exists locally and remotely, use the newer timestamp (or local if equal)
-				if (isNewerTimestamp(localFile.mtime, remoteFile.mtime)) {
-					newState[path] = localFile.mtime.toString();
-				} else if (isNewerTimestamp(remoteFile.mtime, localFile.mtime)) {
-					newState[path] = remoteFile.mtime.toString();
-				} else {
-					// Timestamps are equal within tolerance, use local
-					newState[path] = localFile.mtime.toString();
-				}
-			} else {
-				// File only exists remotely
-				newState[path] = remoteFile.mtime.toString();
-			}
+			const remoteFile = remoteFiles.get(path);
+
+			newState[path] = {
+				localMtime: localFile?.mtime,
+				remoteMtime: remoteFile?.mtime
+			};
 		}
 
 		// Save the new state
