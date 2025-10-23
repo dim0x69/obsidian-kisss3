@@ -1,12 +1,13 @@
 import { App, TFolder, TFile } from "obsidian";
 import { SyncState } from "./SyncTypes";
+import { normalizePath } from "obsidian";
 
 /**
  * Manages the sync state file (.obsidian/plugins/kisss3/sync-state.json)
  */
 export class SyncStateManager {
-	private readonly STATE_FILE_PATH = ".obsidian/plugins/kisss3/sync-state.json";
-
+	private readonly STATE_DIR = ".kisss3";
+	private readonly STATE_FILE_PATH = `${this.STATE_DIR}/sync-state.json`;
 	constructor(private app: App) {}
 
 	/**
@@ -15,7 +16,9 @@ export class SyncStateManager {
 	 */
 	async loadState(): Promise<SyncState> {
 		try {
-			const stateFile = this.app.vault.getAbstractFileByPath(this.STATE_FILE_PATH);
+			const stateFile = this.app.vault.getAbstractFileByPath(
+				this.STATE_FILE_PATH,
+			);
 			if (!stateFile || stateFile instanceof TFolder) {
 				// File doesn't exist or is a folder
 				return {};
@@ -24,7 +27,10 @@ export class SyncStateManager {
 			const content = await this.app.vault.read(stateFile as TFile);
 			return JSON.parse(content) as SyncState;
 		} catch (error) {
-			console.warn("S3 Sync: Could not load sync state, starting with empty state:", error);
+			console.warn(
+				"S3 Sync: Could not load sync state, starting with empty state:",
+				error,
+			);
 			return {};
 		}
 	}
@@ -36,10 +42,14 @@ export class SyncStateManager {
 	async saveState(state: SyncState): Promise<void> {
 		try {
 			// Ensure the plugin directory exists
+			console.info("Saving sync state...");
 			await this.ensurePluginDirectoryExists();
 
 			const content = JSON.stringify(state, null, 2);
-			const stateFile = this.app.vault.getAbstractFileByPath(this.STATE_FILE_PATH);
+			const stateFile = this.app.vault.getAbstractFileByPath(
+				normalizePath(this.STATE_FILE_PATH),
+			);
+			console.log("State file:", stateFile);
 
 			if (stateFile && !(stateFile instanceof TFolder)) {
 				// File exists, modify it
@@ -58,18 +68,11 @@ export class SyncStateManager {
 	 * Ensures the plugin directory exists
 	 */
 	private async ensurePluginDirectoryExists(): Promise<void> {
-		const pluginDir = ".obsidian/plugins/kisss3";
-		const existingDir = this.app.vault.getAbstractFileByPath(pluginDir);
-		
+		const existingDir = this.app.vault.getAbstractFileByPath(
+			normalizePath(this.STATE_DIR),
+		);
 		if (!existingDir) {
-			try {
-				await this.app.vault.createFolder(pluginDir);
-			} catch (error) {
-				// Ignore error if folder already exists (race condition)
-				if (!(error instanceof Error && error.message.includes("already exists"))) {
-					throw error;
-				}
-			}
+			await this.app.vault.createFolder(this.STATE_DIR);
 		}
 	}
 

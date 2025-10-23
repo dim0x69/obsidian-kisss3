@@ -100,7 +100,7 @@ export class S3Service {
 						return;
 
 					const relativePath = this.getLocalPath(obj.Key);
-					
+
 					// Apply exclusion rule: ignore files/folders starting with a dot
 					if (!this.shouldIgnoreFile(relativePath)) {
 						remoteFiles.set(relativePath, obj);
@@ -131,7 +131,7 @@ export class S3Service {
 		await this.client!.send(command);
 	}
 
-	async downloadFile(s3Object: S3Object): Promise<ArrayBufferLike> {
+	async downloadFile(s3Object: S3Object): Promise<ArrayBuffer> {
 		if (!this.isConfigured()) throw new Error("S3 client not configured.");
 
 		const command = new GetObjectCommand({
@@ -141,12 +141,21 @@ export class S3Service {
 
 		const response = await this.client!.send(command);
 		const byteArray = await response.Body?.transformToByteArray();
-		return byteArray?.buffer ?? new ArrayBuffer(0);
+
+		if (!byteArray) return new ArrayBuffer(0);
+
+		// Ensure the returned buffer is an ArrayBuffer, not just ArrayBufferLike
+		if (byteArray.buffer instanceof ArrayBuffer) {
+			return byteArray.buffer;
+		} else {
+			// Copy to a new ArrayBuffer if it's a SharedArrayBuffer or other ArrayBufferLike
+			return byteArray.slice().buffer;
+		}
 	}
 
 	private getMimeType(filePath: string): string {
 		const mimeType = mimeTypes.lookup(filePath);
-		return mimeType || 'application/octet-stream';
+		return mimeType || "application/octet-stream";
 	}
 
 	async deleteRemoteFile(path: string): Promise<void> {
