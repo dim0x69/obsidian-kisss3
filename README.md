@@ -1,6 +1,6 @@
 # Keep it simple, stupid! S3 Plugin for Obsidian
 
-A simple, single-purpose plugin to keep your Obsidian vault in sync with an Amazon S3 bucket. It does one thing: bidirectional sync between your local vault and S3, with minimal configuration and no unnecessary complexity.
+A simple, single-backend sync plugin to keep your Obsidian vault in sync with an Amazon S3 bucket (or Cloudflare R2). Minimal configuration and no unnecessary complexity.
 
 ## Purpose
 
