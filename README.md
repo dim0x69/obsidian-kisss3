@@ -35,14 +35,6 @@ This plugin is designed for users who want a straightforward way to back up or s
 4. **Review Conflicts**  
    If any conflicts are detected, check your vault for duplicated files and review the changes.
 
-## Why Use This Plugin?
-
-Perfect for users who want a simple, reliable way to back up or share their notes using S3, without the overhead of complex sync solutions.
-
-## License
-
-MIT License
-
 ---
 
 For more details or to contribute, visit the [GitHub repository](https://github.com/dim0x69/obsidian-kisss3).
