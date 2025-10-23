@@ -25,6 +25,11 @@ export class SyncManager {
 	private decisionEngine: SyncDecisionEngine;
 	private running = false;
 
+	// Cache for file maps during sync operation
+	private cachedLocalFiles: LocalFilesMap | null = null;
+	private cachedRemoteFiles: RemoteFilesMap | null = null;
+	private cachedStateFiles: StateFilesMap | null = null;
+
 	constructor(
 		private app: App,
 		private plugin: S3SyncPlugin,
@@ -54,12 +59,12 @@ export class SyncManager {
 		const syncNotice = new Notice("S3 Sync: Starting sync...", 0);
 
 		try {
-			// Step 1: Generate the three maps (Local, Remote, State)
+			// Step 1: Generate and cache the three maps (Local, Remote, State)
 			syncNotice.setMessage("S3 Sync: Generating file maps...");
 			const [localFiles, remoteFiles, stateFiles] = await Promise.all([
-				this.generateLocalFilesMap(),
-				this.generateRemoteFilesMap(),
-				this.generateStateFilesMap()
+				this.getLocalFilesMap(),
+				this.getRemoteFilesMap(),
+				this.getStateFilesMap()
 			]);
 
 			// Step 2: Generate sync decisions
@@ -85,9 +90,56 @@ export class SyncManager {
 			);
 			// Don't update state on error
 		} finally {
+			// Clear cached maps
+			this.clearCachedMaps();
 			this.running = false;
 			setTimeout(() => syncNotice.hide(), 5000);
 		}
+	}
+
+	/**
+	 * Gets local files map with caching during sync operation
+	 */
+	private async getLocalFilesMap(): Promise<LocalFilesMap> {
+		if (this.cachedLocalFiles) {
+			return this.cachedLocalFiles;
+		}
+		
+		this.cachedLocalFiles = await this.generateLocalFilesMap();
+		return this.cachedLocalFiles;
+	}
+
+	/**
+	 * Gets remote files map with caching during sync operation
+	 */
+	private async getRemoteFilesMap(): Promise<RemoteFilesMap> {
+		if (this.cachedRemoteFiles) {
+			return this.cachedRemoteFiles;
+		}
+		
+		this.cachedRemoteFiles = await this.generateRemoteFilesMap();
+		return this.cachedRemoteFiles;
+	}
+
+	/**
+	 * Gets state files map with caching during sync operation
+	 */
+	private async getStateFilesMap(): Promise<StateFilesMap> {
+		if (this.cachedStateFiles) {
+			return this.cachedStateFiles;
+		}
+		
+		this.cachedStateFiles = await this.generateStateFilesMap();
+		return this.cachedStateFiles;
+	}
+
+	/**
+	 * Clears cached file maps after sync operation
+	 */
+	private clearCachedMaps(): void {
+		this.cachedLocalFiles = null;
+		this.cachedRemoteFiles = null;
+		this.cachedStateFiles = null;
 	}
 
 	/**
@@ -198,8 +250,8 @@ export class SyncManager {
 	 * Executes a download action
 	 */
 	private async executeDownload(decision: FileSyncDecision): Promise<void> {
-		// Get the remote file info
-		const remoteFiles = await this.generateRemoteFilesMap();
+		// Get the remote file info from cache
+		const remoteFiles = await this.getRemoteFilesMap();
 		const remoteFile = remoteFiles.get(decision.filePath);
 		
 		if (!remoteFile) {
@@ -267,7 +319,7 @@ export class SyncManager {
 	private async handleConflict(decision: FileSyncDecision): Promise<void> {
 		// For now, use the same strategy as before: keep local version, save remote as conflict file
 		const localFile = this.app.vault.getAbstractFileByPath(decision.filePath) as TFile;
-		const remoteFiles = await this.generateRemoteFilesMap();
+		const remoteFiles = await this.getRemoteFilesMap();
 		const remoteFile = remoteFiles.get(decision.filePath);
 		
 		if (!localFile || !remoteFile) {
@@ -343,10 +395,10 @@ export class SyncManager {
 	 * Updates the sync state after successful sync
 	 */
 	private async updateSyncState(): Promise<void> {
-		// Rescan local and remote files to get current state
+		// Get current state from cache (or generate fresh if cache is cleared)
 		const [localFiles, remoteFiles] = await Promise.all([
-			this.generateLocalFilesMap(),
-			this.generateRemoteFilesMap()
+			this.getLocalFilesMap(),
+			this.getRemoteFilesMap()
 		]);
 
 		// Build new state map
