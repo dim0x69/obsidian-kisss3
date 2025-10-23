@@ -13,7 +13,8 @@ import {
 	StateFilesMap,
 	LocalFile,
 	RemoteFile,
-	SyncState
+	SyncState,
+	isNewerTimestamp
 } from "./SyncTypes";
 
 // Contains the core logic for comparing and synchronizing files.
@@ -413,9 +414,15 @@ export class SyncManager {
 		for (const [path, remoteFile] of remoteFiles.entries()) {
 			const localFile = localFiles.get(path);
 			if (localFile) {
-				// File exists locally and remotely, use the newer timestamp
-				const newerMtime = Math.max(localFile.mtime, remoteFile.mtime);
-				newState[path] = newerMtime.toString();
+				// File exists locally and remotely, use the newer timestamp (or local if equal)
+				if (isNewerTimestamp(localFile.mtime, remoteFile.mtime)) {
+					newState[path] = localFile.mtime.toString();
+				} else if (isNewerTimestamp(remoteFile.mtime, localFile.mtime)) {
+					newState[path] = remoteFile.mtime.toString();
+				} else {
+					// Timestamps are equal within tolerance, use local
+					newState[path] = localFile.mtime.toString();
+				}
 			} else {
 				// File only exists remotely
 				newState[path] = remoteFile.mtime.toString();

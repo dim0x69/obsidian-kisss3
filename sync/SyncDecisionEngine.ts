@@ -6,7 +6,8 @@ import {
 	RemoteFile, 
 	LocalFilesMap, 
 	RemoteFilesMap, 
-	StateFilesMap 
+	StateFilesMap,
+	isNewerTimestamp
 } from "./SyncTypes";
 
 /**
@@ -94,7 +95,7 @@ export class SyncDecisionEngine {
 		
 		if (file && stateTimestamp) {
 			const stateTime = parseInt(stateTimestamp);
-			if (file.mtime > stateTime) {
+			if (isNewerTimestamp(file.mtime, stateTime)) {
 				return FileStatus.MODIFIED; // File was modified since state
 			}
 			return FileStatus.UNCHANGED; // File hasn't changed since state
@@ -183,11 +184,12 @@ export class SyncDecisionEngine {
 
 		// All other conflicts: Newest wins by mtime
 		if (localFile && remoteFile) {
-			if (localFile.mtime > remoteFile.mtime) {
+			if (isNewerTimestamp(localFile.mtime, remoteFile.mtime)) {
 				return SyncAction.UPLOAD;
-			} else if (remoteFile.mtime > localFile.mtime) {
+			} else if (isNewerTimestamp(remoteFile.mtime, localFile.mtime)) {
 				return SyncAction.DOWNLOAD;
 			}
+			// If timestamps are equal within tolerance, no action needed
 		}
 
 		// If we can't determine, flag as conflict for manual resolution
