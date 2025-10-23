@@ -1,31 +1,39 @@
-import { App, TFolder, TFile } from "obsidian";
+import { App, TFolder, TFile, Plugin } from "obsidian";
 import { SyncState } from "./SyncTypes";
-import { normalizePath } from "obsidian";
 
 /**
- * Manages the sync state file (.obsidian/plugins/kisss3/sync-state.json)
+ * Manages the sync state using Obsidian's Plugin Data API
  */
 export class SyncStateManager {
-	private readonly STATE_DIR = ".kisss3";
-	private readonly STATE_FILE_PATH = `${this.STATE_DIR}/sync-state.json`;
-	constructor(private app: App) {}
+	private readonly LEGACY_STATE_DIR = ".kisss3";
+	private readonly LEGACY_STATE_FILE_PATH = `${this.LEGACY_STATE_DIR}/sync-state.json`;
+	private readonly SYNC_STATE_KEY = "syncState";
+	
+	constructor(private app: App, private plugin: Plugin) {}
 
 	/**
-	 * Loads the sync state from the state file
-	 * @returns SyncState object or empty object if file doesn't exist
+	 * Loads the sync state from plugin data API, with migration from legacy file
+	 * @returns SyncState object or empty object if no state exists
 	 */
 	async loadState(): Promise<SyncState> {
 		try {
-			const stateFile = this.app.vault.getAbstractFileByPath(
-				this.STATE_FILE_PATH,
-			);
-			if (!stateFile || stateFile instanceof TFolder) {
-				// File doesn't exist or is a folder
-				return {};
+			// First try to load from plugin data API
+			const pluginData = await this.plugin.loadData();
+			if (pluginData && pluginData[this.SYNC_STATE_KEY]) {
+				return pluginData[this.SYNC_STATE_KEY] as SyncState;
 			}
 
-			const content = await this.app.vault.read(stateFile as TFile);
-			return JSON.parse(content) as SyncState;
+			// If no plugin data, try to migrate from legacy file
+			const legacyState = await this.migrateLegacyState();
+			if (legacyState && Object.keys(legacyState).length > 0) {
+				// Save migrated state to plugin data API
+				await this.saveState(legacyState);
+				console.info("S3 Sync: Successfully migrated legacy sync state to plugin data API");
+				return legacyState;
+			}
+
+			// No state found anywhere, return empty state
+			return {};
 		} catch (error) {
 			console.warn(
 				"S3 Sync: Could not load sync state, starting with empty state:",
@@ -36,28 +44,23 @@ export class SyncStateManager {
 	}
 
 	/**
-	 * Saves the sync state to the state file
+	 * Saves the sync state to plugin data API
 	 * @param state The sync state to save
 	 */
 	async saveState(state: SyncState): Promise<void> {
 		try {
-			// Ensure the plugin directory exists
 			console.info("Saving sync state...");
-			await this.ensurePluginDirectoryExists();
-
-			const content = JSON.stringify(state, null, 2);
-			const stateFile = this.app.vault.getAbstractFileByPath(
-				normalizePath(this.STATE_FILE_PATH),
-			);
-			console.log("State file:", stateFile);
-
-			if (stateFile && !(stateFile instanceof TFolder)) {
-				// File exists, modify it
-				await this.app.vault.modify(stateFile as TFile, content);
-			} else {
-				// File doesn't exist, create it
-				await this.app.vault.create(this.STATE_FILE_PATH, content);
-			}
+			
+			// Load existing plugin data to preserve other data
+			const pluginData = await this.plugin.loadData() || {};
+			
+			// Update sync state in plugin data
+			pluginData[this.SYNC_STATE_KEY] = state;
+			
+			// Save back to plugin data API
+			await this.plugin.saveData(pluginData);
+			
+			console.info("S3 Sync: Successfully saved sync state to plugin data API");
 		} catch (error) {
 			console.error("S3 Sync: Failed to save sync state:", error);
 			throw new Error(`Failed to save sync state: ${error.message}`);
@@ -65,14 +68,45 @@ export class SyncStateManager {
 	}
 
 	/**
-	 * Ensures the plugin directory exists
+	 * Migrates legacy sync state from .kisss3/sync-state.json if present
+	 * @returns Legacy SyncState or empty object if no legacy file exists
 	 */
-	private async ensurePluginDirectoryExists(): Promise<void> {
-		const existingDir = this.app.vault.getAbstractFileByPath(
-			normalizePath(this.STATE_DIR),
-		);
-		if (!existingDir) {
-			await this.app.vault.createFolder(this.STATE_DIR);
+	private async migrateLegacyState(): Promise<SyncState> {
+		try {
+			const legacyStateFile = this.app.vault.getAbstractFileByPath(
+				this.LEGACY_STATE_FILE_PATH,
+			);
+			if (!legacyStateFile || legacyStateFile instanceof TFolder) {
+				// Legacy file doesn't exist or is a folder
+				return {};
+			}
+
+			const content = await this.app.vault.read(legacyStateFile as TFile);
+			const legacyState = JSON.parse(content) as SyncState;
+
+			// Remove the legacy state file after successful migration
+			try {
+				await this.app.vault.delete(legacyStateFile);
+				console.info("S3 Sync: Removed legacy sync state file after migration");
+			} catch (deleteError) {
+				console.warn("S3 Sync: Could not remove legacy state file:", deleteError);
+			}
+
+			// Try to remove the legacy directory if it's empty
+			try {
+				const legacyDir = this.app.vault.getAbstractFileByPath(this.LEGACY_STATE_DIR);
+				if (legacyDir instanceof TFolder && legacyDir.children.length === 0) {
+					await this.app.vault.delete(legacyDir);
+					console.info("S3 Sync: Removed empty legacy sync state directory");
+				}
+			} catch (deleteDirError) {
+				console.warn("S3 Sync: Could not remove legacy state directory:", deleteDirError);
+			}
+
+			return legacyState;
+		} catch (error) {
+			console.warn("S3 Sync: Could not migrate legacy sync state:", error);
+			return {};
 		}
 	}
 

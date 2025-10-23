@@ -113,16 +113,17 @@ The sync process includes:
 
 ## Technical Implementation Details
 
-- **State File**: Sync state is stored in `.obsidian/plugins/kisss3/sync-state.json` as a JSON map of `{ "file/path": "mtime_timestamp" }`
+- **State Storage**: Sync state is stored using Obsidian's Plugin Data API, ensuring it's always hidden from users and robustly managed
+- **Legacy Migration**: Automatically migrates existing sync state from `.kisss3/sync-state.json` to the plugin data API on first load, then removes the legacy file
 - **Timestamp precision**: Uses millisecond precision Unix timestamps for modification time comparisons
 - **Timestamp tolerance**: Uses 2-second tolerance when comparing timestamps to account for different file system precisions (S3, NTFS, APFS, ext4) and prevent false modifications
 - **Exclusion rules**: Files/folders beginning with a dot (`.`) are ignored in all sync operations
 - **Safe execution order**: Actions are executed in order: downloads → uploads → deletes to prevent data loss
-- **Atomic state updates**: State file is only updated after successful completion of all sync actions
+- **Atomic state updates**: State is only updated after successful completion of all sync actions
 - **Folder creation**: Missing folder structures are automatically created when downloading files
 - **Folder pruning**: Empty folders are optionally pruned after sync completion
 - **S3 prefixes**: Remote file paths respect the configured S3 prefix setting
-- **Error handling**: Any sync error aborts the operation and prevents state file updates
+- **Error handling**: Any sync error aborts the operation and prevents state updates
 
 ## Initial Sync Scenarios
 
@@ -168,6 +169,22 @@ When both vault and remote storage are empty:
 - Ready for future synchronization as files are added
 
 These scenarios demonstrate the algorithm's ability to handle initial synchronization robustly without data loss or conflicts.
+
+## Legacy State Migration
+
+For users upgrading from previous versions of the plugin that stored sync state in `.kisss3/sync-state.json`:
+
+1. **Automatic Migration**: The plugin automatically detects and migrates existing sync state from the legacy file to Obsidian's Plugin Data API on first load
+2. **Legacy File Cleanup**: After successful migration, the legacy state file `.kisss3/sync-state.json` is automatically removed
+3. **Directory Cleanup**: If the `.kisss3` directory becomes empty after migration, it is also removed
+4. **Seamless Transition**: No user action is required - the migration happens transparently during the first sync operation after upgrading
+5. **Fallback**: If migration fails for any reason, the plugin starts with empty state and the legacy file is left untouched for manual recovery
+
+**Benefits of the new approach:**
+- Plugin state is always hidden from users (not visible in the file explorer)
+- More robust than file-based storage (cannot be accidentally modified or deleted by users)
+- Leverages Obsidian's built-in plugin data management system
+- Eliminates issues with `getAbstractFileByPath` accessing hidden directories
 
 ## Sync Frequency
 

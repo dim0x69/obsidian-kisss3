@@ -36,7 +36,7 @@ export class SyncManager {
 		private plugin: S3SyncPlugin,
 	) {
 		this.s3Service = new S3Service(this.plugin.settings);
-		this.stateManager = new SyncStateManager(this.app);
+		this.stateManager = new SyncStateManager(this.app, this.plugin);
 		this.decisionEngine = new SyncDecisionEngine();
 	}
 
