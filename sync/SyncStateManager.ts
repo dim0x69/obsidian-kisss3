@@ -62,7 +62,14 @@ export class SyncStateManager {
 		const existingDir = this.app.vault.getAbstractFileByPath(pluginDir);
 		
 		if (!existingDir) {
-			await this.app.vault.createFolder(pluginDir);
+			try {
+				await this.app.vault.createFolder(pluginDir);
+			} catch (error) {
+				// Ignore error if folder already exists (race condition)
+				if (!(error instanceof Error && error.message.includes("already exists"))) {
+					throw error;
+				}
+			}
 		}
 	}
 
