@@ -4,13 +4,13 @@ This document describes the file synchronization behavior between your local Obs
 
 ## Sync Process Overview
 
-The plugin performs three-source synchronization by comparing file states between **Local** vault files, **Remote** S3 objects, and a **State** file (`.obsidian/plugins/kisss3/sync-state.json`) that tracks the last known synchronized state of each file. This approach provides more robust conflict detection and resolution compared to simple timestamp-based sync.
+The plugin performs three-source synchronization by comparing file states between **Local** vault files, **Remote** S3 objects, and a **State** file, that tracks the last known synchronized state of each file. This approach provides more robust conflict detection and resolution compared to simple timestamp-based sync.
 
 ### Three-Source Algorithm
 
 1. **Local Map**: Generated from all vault files (excluding files/folders starting with `.`)
-2. **Remote Map**: Generated from all S3 objects (excluding files/folders starting with `.`) 
-3. **State Map**: Loaded from the sync state file containing previous sync state
+2. **Remote Map**: Generated from all S3 objects (excluding files/folders starting with `.`)
+3. **State Map**: Loaded from the sync state file containing previous sync state. The state file contains the modification timestamps for the remote and the local files.
 
 For each unique file path across all three sources, the algorithm:
 - Categorizes each file as **Created**, **Modified**, **Deleted**, or **Unchanged** compared to the state
@@ -22,23 +22,26 @@ For each unique file path across all three sources, the algorithm:
 
 The three-source algorithm categorizes each file's status (Created/Modified/Deleted/Unchanged) by comparing current Local and Remote states against the previous State, then applies this decision matrix:
 
-| Local Status | Remote Status | Action Taken | Description |
-|-------------|---------------|--------------|-------------|
-| **Created** | **Unchanged** | **Upload** | New local file |
-| **Modified** | **Unchanged** | **Upload** | Local file was modified |
-| **Unchanged** | **Created** | **Download** | New remote file |
-| **Unchanged** | **Modified** | **Download** | Remote file was modified |
-| **Created/Modified** | **Created/Modified** | **Conflict Resolution** | Both sides changed |
-| **Deleted** | **Modified/Created** | **Download** | Modification beats deletion |
-| **Modified/Created** | **Deleted** | **Upload** | Modification beats deletion |
-| **Deleted** | **Deleted** | **Do Nothing** | Both sides deleted |
-| **Unchanged** | **Unchanged** | **Do Nothing** | No changes |
+| Local Status      | Remote Status      | Action Taken         | Description                                      |
+|-------------------|-------------------|----------------------|--------------------------------------------------|
+| Created           | Unchanged         | Upload               | New local file                                   |
+| Modified          | Unchanged         | Upload               | Local file was modified                          |
+| Unchanged         | Created           | Download             | New remote file                                  |
+| Unchanged         | Modified          | Download             | Remote file was modified                         |
+| Created/Modified  | Created/Modified  | Conflict Resolution  | Both sides changed                               |
+| Deleted           | Modified/Created  | Download             | Modification beats deletion                      |
+| Modified/Created  | Deleted           | Upload               | Modification beats deletion                      |
+| Deleted           | Deleted           | Do Nothing           | Both sides deleted                               |
+| Unchanged         | Unchanged         | Do Nothing           | No changes                                       |
+| Unchanged         | Deleted           | Delete local         | File deleted remotely, still exists locally      |
+| Deleted           | Unchanged         | Delete remote        | File deleted locally, still exists remotely      |
 
 ### Conflict Resolution Rules
 
 1. **Modification vs. Deletion**: Modification wins (upload or download accordingly)
-2. **Creation vs. Deletion**: Creation wins (upload or download accordingly)  
+2. **Creation vs. Deletion**: Creation wins (upload or download accordingly)
 3. **All other conflicts**: Newest file wins by modification time (upload or download)
+4. **True conflict (both modified):** Both versions are preserved; remote is downloaded as a conflict file, local is uploaded as the primary version.
 
 ## Detailed Situation Descriptions
 
@@ -69,7 +72,7 @@ When a file exists both locally and remotely, but only the local version was mod
 **Action: Download**
 
 When a file exists both locally and remotely, but only the remote version was modified since the last sync, the remote version takes precedence and is downloaded to replace the local file. The plugin determines this by comparing:
-- Local file modification time ≤ last sync timestamp  
+- Local file modification time ≤ last sync timestamp
 - Remote file modification time > last sync timestamp
 
 The local file is updated with the remote content and the remote modification timestamp is preserved.
@@ -100,7 +103,22 @@ When both files exist and neither has been modified since the last sync, no acti
 - Remote file modification time ≤ last sync timestamp
 - Files are considered synchronized
 
-### 7. Explicit delete event (user triggers delete locally)
+### 7. File deleted remotely, still exists locally
+**Action: Delete local**
+
+When a file was deleted on S3 but still exists in your vault, the plugin deletes the local file to match the remote state.
+
+### 8. File deleted locally, still exists remotely
+**Action: Delete remote**
+
+When a file was deleted in your vault but still exists on S3, the plugin deletes the remote file to match the local state.
+
+### 9. File deleted both locally and remotely
+**Action: Do nothing**
+
+When a file was deleted in both locations, no action is taken.
+
+### 10. Explicit delete event (user triggers delete locally)
 **Action: Propagate delete to remote**
 
 > **Note:** This functionality is mentioned in the README.md as a planned feature ("Delete files" is listed in the Todo section) but is not currently implemented in the codebase. When implemented, locally deleted files would trigger removal from S3 during the next sync operation.
@@ -114,8 +132,6 @@ The sync process includes:
 ## Technical Implementation Details
 
 - **State Storage**: Sync state is stored using Obsidian's Plugin Data API, ensuring it's always hidden from users and robustly managed
-- **Timestamp precision**: Uses millisecond precision Unix timestamps for modification time comparisons
-- **Timestamp tolerance**: Uses 2-second tolerance when comparing timestamps to account for different file system precisions (S3, NTFS, APFS, ext4) and prevent false modifications
 - **Exclusion rules**: Files/folders beginning with a dot (`.`) are ignored in all sync operations
 - **Safe execution order**: Actions are executed in order: downloads → uploads → deletes to prevent data loss
 - **Atomic state updates**: State is only updated after successful completion of all sync actions
@@ -133,7 +149,7 @@ The three-source algorithm handles initial synchronization scenarios gracefully 
 When syncing a **new empty vault** with an **existing S3 bucket containing files** for the first time:
 
 1. **Local Map**: Empty (no vault files)
-2. **Remote Map**: Contains existing S3 files 
+2. **Remote Map**: Contains existing S3 files
 3. **State Map**: Empty (no previous sync state)
 
 **Behavior:**
@@ -144,13 +160,13 @@ When syncing a **new empty vault** with an **existing S3 bucket containing files
 
 **Result:** The vault becomes a complete copy of the remote storage.
 
-### Existing Vault + Empty Remote Storage  
+### Existing Vault + Empty Remote Storage
 
 When syncing an **existing vault with files** to a **new empty S3 bucket** for the first time:
 
 1. **Local Map**: Contains existing vault files
 2. **Remote Map**: Empty (no S3 files)
-3. **State Map**: Empty (no previous sync state) 
+3. **State Map**: Empty (no previous sync state)
 
 **Behavior:**
 - For each local file: `Local: CREATED, Remote: UNCHANGED` → **Action: UPLOAD**
@@ -164,7 +180,7 @@ When syncing an **existing vault with files** to a **new empty S3 bucket** for t
 
 When both vault and remote storage are empty:
 - No files to sync in either direction
-- Empty state file is created 
+- Empty state file is created
 - Ready for future synchronization as files are added
 
 These scenarios demonstrate the algorithm's ability to handle initial synchronization robustly without data loss or conflicts.
