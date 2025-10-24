@@ -2,6 +2,9 @@
 
 A simple, single-backend sync plugin to keep your Obsidian vault in sync with an Amazon S3 bucket (or Cloudflare R2). Minimal configuration and no unnecessary complexity.
 
+ToDo:
+* CORS: See before using: https://github.com/dim0x69/obsidian-kisss3/issues/10
+
 ## Purpose
 
 This plugin is designed for users who want a straightforward way to back up or share their Obsidian vault using Amazon S3. It follows the KISS (Keep It Simple, Stupid) principle—no extra features, no cloud lock-in, no surprises—just reliable S3 sync for your notes.
