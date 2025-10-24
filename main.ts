@@ -29,16 +29,17 @@ export default class S3SyncPlugin extends Plugin {
 		// Register delete event handler for real-time sync
 		this.registerEvent(
 			this.app.vault.on("delete", (file) => {
-				if (file instanceof TFile && !file.path.split("/").some((part) => part.startsWith("."))) {
+				if (
+					file instanceof TFile &&
+					!file.path.split("/").some((part) => part.startsWith("."))
+				) {
 					this.syncManager.handleLocalDelete(file.path);
 				}
-			})
+			}),
 		);
 
 		this.updateSyncInterval();
-
-		// Run initial sync automatically when plugin loads
-		this.syncManager.runSync();
+		this.syncManager; // Run initial sync automatically when plugin loads
 	}
 
 	onunload() {
