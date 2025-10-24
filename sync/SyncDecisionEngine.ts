@@ -195,19 +195,6 @@ export class SyncDecisionEngine {
 			return SyncAction.DOWNLOAD; // Created or Modified remotely
 		}
 
-		// Case: File exists in both locations
-		if (
-			localStatus !== FileStatus.UNCHANGED &&
-			remoteStatus !== FileStatus.UNCHANGED
-		) {
-			return this.resolveConflict(
-				localStatus,
-				remoteStatus,
-				localFile,
-				remoteFile,
-			);
-		}
-
 		// Case: File deleted locally but exists/modified remotely
 		if (
 			localStatus === FileStatus.DELETED &&
@@ -231,7 +218,18 @@ export class SyncDecisionEngine {
 			// Modification vs Deletion: Modification wins
 			return SyncAction.UPLOAD;
 		}
-
+		// Case: File exists in both locations
+		if (
+			localStatus !== FileStatus.UNCHANGED &&
+			remoteStatus !== FileStatus.UNCHANGED
+		) {
+			return this.resolveConflict(
+				localStatus,
+				remoteStatus,
+				localFile,
+				remoteFile,
+			);
+		}
 		return SyncAction.DO_NOTHING; // No changes needed
 	}
 
