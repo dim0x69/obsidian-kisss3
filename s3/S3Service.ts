@@ -8,7 +8,7 @@ import {
 	DeleteObjectCommand,
 	_Object as S3Object, // Alias to avoid conflict with Object
 } from "@aws-sdk/client-s3";
-import * as mimeTypes from "mime-types";
+
 import { S3SyncSettings } from "../settings";
 
 // Manages all interactions with the S3-compatible object storage.
@@ -24,7 +24,8 @@ export class S3Service {
 			this.settings.endpoint &&
 			this.settings.region &&
 			this.settings.accessKeyId &&
-			this.settings.secretAccessKey
+			this.settings.secretAccessKey &&
+			this.settings.bucketName
 		) {
 			this.client = new S3Client({
 				endpoint: this.settings.endpoint,
@@ -68,20 +69,14 @@ export class S3Service {
 	}
 
 	async listRemoteFiles(): Promise<Map<string, S3Object>> {
-		if (!this.isConfigured() || !this.settings.bucketName) {
-			throw new Error("S3 client is not configured.");
-		}
-
-		// https://docs.aws.amazon.com/AWSJavaScriptSDK/v3/latest/Package/-aws-sdk-client-s3/Interface/ListObjectsV2CommandOutput/
-		// https://docs.aws.amazon.com/AWSJavaScriptSDK/v3/latest/Package/-aws-sdk-client-s3/Class/ListObjectsV2Command/
-
 		const remoteFiles = new Map<string, S3Object>();
-		let isTruncated = true;
-		let continuationToken: string | undefined = undefined;
+		if (!this.isConfigured()) throw new Error("S3 client not configured.");
 
-		// Loop to handle pagination of S3 results.
+		let continuationToken: string | undefined = undefined;
+		let isTruncated = true;
+
 		while (isTruncated) {
-			const command: ListObjectsV2Command = new ListObjectsV2Command({
+			const command = new ListObjectsV2Command({
 				Bucket: this.settings.bucketName,
 				Prefix: this.settings.remotePrefix.trim(),
 				ContinuationToken: continuationToken,
@@ -118,14 +113,13 @@ export class S3Service {
 		if (!this.isConfigured()) throw new Error("S3 client not configured.");
 
 		const body = new Uint8Array(content);
-		const contentType = this.getMimeType(file.path);
 
 		const command = new PutObjectCommand({
 			Bucket: this.settings.bucketName,
 			Key: this.getRemoteKey(file.path),
 			Body: body,
 			ContentLength: body.length,
-			ContentType: contentType,
+			ContentType: "application/octet-stream", // Always use octet-stream
 		});
 
 		await this.client!.send(command);
@@ -151,11 +145,6 @@ export class S3Service {
 			// Copy to a new ArrayBuffer if it's a SharedArrayBuffer or other ArrayBufferLike
 			return byteArray.slice().buffer;
 		}
-	}
-
-	private getMimeType(filePath: string): string {
-		const mimeType = mimeTypes.lookup(filePath);
-		return mimeType || "application/octet-stream";
 	}
 
 	async deleteRemoteFile(path: string): Promise<void> {
