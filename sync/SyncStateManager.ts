@@ -1,13 +1,16 @@
 import { App, Plugin } from "obsidian";
 import { SyncState } from "./SyncTypes";
-
+import { KISSS3_DEBUG_LOG } from "../main";
 /**
  * Manages the sync state using Obsidian's Plugin Data API
  */
 export class SyncStateManager {
 	private readonly SYNC_STATE_KEY = "syncState";
-	
-	constructor(private app: App, private plugin: Plugin) {}
+
+	constructor(
+		private app: App,
+		private plugin: Plugin,
+	) {}
 
 	/**
 	 * Loads the sync state from plugin data API
@@ -37,26 +40,28 @@ export class SyncStateManager {
 	 */
 	async saveState(state: SyncState): Promise<void> {
 		try {
-			console.info("Saving sync state...");
-			
+			if (KISSS3_DEBUG_LOG) {
+				console.info("Saving sync state...");
+			}
 			// Load existing plugin data to preserve other data
 			const pluginData = await this.plugin.loadData();
 			const safePluginData = pluginData ?? {};
-			
+
 			// Update sync state in plugin data
 			safePluginData[this.SYNC_STATE_KEY] = state;
-			
+
 			// Save back to plugin data API
 			await this.plugin.saveData(safePluginData);
-			
-			console.info("S3 Sync: Successfully saved sync state to plugin data API");
+			if (KISSS3_DEBUG_LOG) {
+				console.log(
+					"S3 Sync: Successfully saved sync state to plugin data API",
+				);
+			}
 		} catch (error) {
 			console.error("S3 Sync: Failed to save sync state:", error);
 			throw new Error(`Failed to save sync state: ${error.message}`);
 		}
 	}
-
-
 
 	/**
 	 * Clears the sync state (useful for testing or reset scenarios)

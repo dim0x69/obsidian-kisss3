@@ -90,14 +90,14 @@ export class S3SyncSettingTab extends PluginSettingTab {
 					.setPlaceholder("my-vault")
 					.setValue(this.plugin.settings.remotePrefix)
 					.onChange(async (value) => {
-						this.plugin.settings.remotePrefix = normalizePath(value.trim());
+						this.plugin.settings.remotePrefix = normalizePath(
+							value.trim(),
+						);
 						await this.plugin.saveSettings();
 					}),
 			);
 
-		new Setting(containerEl)
-			.setHeading()
-			.setName("Automatic sync");
+		new Setting(containerEl).setHeading().setName("Automatic sync");
 
 		new Setting(containerEl)
 			.setName("Enable automatic sync")
@@ -128,6 +128,19 @@ export class S3SyncSettingTab extends PluginSettingTab {
 							this.plugin.settings.syncIntervalMinutes = numValue;
 							await this.plugin.saveSettings();
 						}
+					}),
+			);
+		new Setting(containerEl).setHeading().setName("Debug");
+
+		new Setting(containerEl)
+			.setName("Enable debug logging")
+			.setDesc("Enable logging to Obsidian's log file.")
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.enableDebugLogging)
+					.onChange(async (value) => {
+						this.plugin.settings.enableDebugLogging = value;
+						await this.plugin.saveSettings();
 					}),
 			);
 	}

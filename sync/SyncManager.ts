@@ -1,20 +1,21 @@
 import { App, Notice, TFile, TFolder } from "obsidian";
 import { S3Service } from "../s3/S3Service";
 import S3SyncPlugin from "../main";
+import { KISSS3_DEBUG_LOG } from "../main";
 import { S3SyncSettings } from "../settings";
 import { _Object as S3Object } from "@aws-sdk/client-s3";
 import { SyncStateManager } from "./SyncStateManager";
 import { SyncDecisionEngine } from "./SyncDecisionEngine";
-import { 
-	SyncAction, 
-	FileSyncDecision, 
-	LocalFilesMap, 
-	RemoteFilesMap, 
+import {
+	SyncAction,
+	FileSyncDecision,
+	LocalFilesMap,
+	RemoteFilesMap,
 	StateFilesMap,
 	LocalFile,
 	RemoteFile,
 	SyncState,
-	SyncFileState
+	SyncFileState,
 } from "./SyncTypes";
 
 // Contains the core logic for comparing and synchronizing files.
@@ -55,7 +56,6 @@ export class SyncManager {
 			);
 			return;
 		}
-
 		this.running = true;
 		const syncNotice = new Notice("S3 Sync: Starting sync...", 0);
 
@@ -65,15 +65,15 @@ export class SyncManager {
 			const [localFiles, remoteFiles, stateFiles] = await Promise.all([
 				this.getLocalFilesMap(),
 				this.getRemoteFilesMap(),
-				this.getStateFilesMap()
+				this.getStateFilesMap(),
 			]);
 
 			// Step 2: Generate sync decisions
 			syncNotice.setMessage("S3 Sync: Analyzing files...");
 			const decisions = this.decisionEngine.generateSyncDecisions(
-				localFiles, 
-				remoteFiles, 
-				stateFiles
+				localFiles,
+				remoteFiles,
+				stateFiles,
 			);
 
 			// Step 3: Execute sync actions in safe order (downloads → uploads → deletes)
@@ -105,7 +105,7 @@ export class SyncManager {
 		if (this.cachedLocalFiles) {
 			return this.cachedLocalFiles;
 		}
-		
+
 		this.cachedLocalFiles = await this.generateLocalFilesMap();
 		return this.cachedLocalFiles;
 	}
@@ -117,7 +117,7 @@ export class SyncManager {
 		if (this.cachedRemoteFiles) {
 			return this.cachedRemoteFiles;
 		}
-		
+
 		this.cachedRemoteFiles = await this.generateRemoteFilesMap();
 		return this.cachedRemoteFiles;
 	}
@@ -129,7 +129,7 @@ export class SyncManager {
 		if (this.cachedStateFiles) {
 			return this.cachedStateFiles;
 		}
-		
+
 		this.cachedStateFiles = await this.generateStateFilesMap();
 		return this.cachedStateFiles;
 	}
@@ -148,17 +148,23 @@ export class SyncManager {
 	 */
 	private async generateLocalFilesMap(): Promise<LocalFilesMap> {
 		const localFiles = new Map<string, LocalFile>();
-		
+
 		this.app.vault.getFiles().forEach((file) => {
 			// Apply exclusion rule: ignore files/folders starting with a dot
 			if (!this.shouldIgnoreFile(file.path)) {
 				localFiles.set(file.path, {
 					path: file.path,
-					mtime: file.stat.mtime
+					mtime: file.stat.mtime,
 				});
 			}
 		});
-		
+
+		if (KISSS3_DEBUG_LOG) {
+			console.log(
+				"generateLocalFilesMap - Local Files Map Keys:",
+				Array.from(localFiles.keys()),
+			);
+		}
 		return localFiles;
 	}
 
@@ -171,15 +177,23 @@ export class SyncManager {
 
 		for (const [path, s3Object] of s3Objects.entries()) {
 			// Apply exclusion rule: ignore files/folders starting with a dot
-			if (!this.shouldIgnoreFile(path) && s3Object.LastModified && s3Object.Key) {
+			if (
+				!this.shouldIgnoreFile(path) &&
+				s3Object.LastModified &&
+				s3Object.Key
+			) {
 				remoteFiles.set(path, {
 					path: path,
 					mtime: s3Object.LastModified.getTime(),
-					key: s3Object.Key
+					key: s3Object.Key,
 				});
 			}
 		}
-
+		if (KISSS3_DEBUG_LOG) {
+			console.log(
+				`generateRemoteFilesMap : Remote Files Map Keys ${Array.from(remoteFiles.keys())}`,
+			);
+		}
 		return remoteFiles;
 	}
 
@@ -194,9 +208,11 @@ export class SyncManager {
 			// Apply exclusion rule: ignore files/folders starting with a dot
 			if (!this.shouldIgnoreFile(filePath)) {
 				// Handle both old format (string) and new format (SyncFileState)
-				if (typeof fileState === 'string') {
+				if (typeof fileState === "string") {
 					// Legacy format - treat as local mtime
-					stateFiles.set(filePath, { localMtime: parseInt(fileState) });
+					stateFiles.set(filePath, {
+						localMtime: parseInt(fileState),
+					});
 				} else {
 					// New format
 					stateFiles.set(filePath, fileState);
@@ -219,15 +235,21 @@ export class SyncManager {
 	 * Executes sync decisions in safe order: downloads → uploads → deletes
 	 */
 	private async executeSyncDecisions(
-		decisions: FileSyncDecision[], 
-		syncNotice: Notice
+		decisions: FileSyncDecision[],
+		syncNotice: Notice,
 	): Promise<void> {
-		const downloads = decisions.filter(d => d.action === SyncAction.DOWNLOAD);
-		const uploads = decisions.filter(d => d.action === SyncAction.UPLOAD);
-		const deletes = decisions.filter(d => 
-			d.action === SyncAction.DELETE_LOCAL || d.action === SyncAction.DELETE_REMOTE
+		const downloads = decisions.filter(
+			(d) => d.action === SyncAction.DOWNLOAD,
 		);
-		const conflicts = decisions.filter(d => d.action === SyncAction.CONFLICT);
+		const uploads = decisions.filter((d) => d.action === SyncAction.UPLOAD);
+		const deletes = decisions.filter(
+			(d) =>
+				d.action === SyncAction.DELETE_LOCAL ||
+				d.action === SyncAction.DELETE_REMOTE,
+		);
+		const conflicts = decisions.filter(
+			(d) => d.action === SyncAction.CONFLICT,
+		);
 
 		// Execute downloads first
 		for (const decision of downloads) {
@@ -249,7 +271,9 @@ export class SyncManager {
 
 		// Handle conflicts
 		for (const decision of conflicts) {
-			syncNotice.setMessage(`S3 Sync: Resolving conflict for ${decision.filePath}`);
+			syncNotice.setMessage(
+				`S3 Sync: Resolving conflict for ${decision.filePath}`,
+			);
 			await this.handleConflict(decision);
 		}
 	}
@@ -261,7 +285,7 @@ export class SyncManager {
 		// Get the remote file info from cache
 		const remoteFiles = await this.getRemoteFilesMap();
 		const remoteFile = remoteFiles.get(decision.filePath);
-		
+
 		if (!remoteFile) {
 			throw new Error(`Remote file not found: ${decision.filePath}`);
 		}
@@ -269,26 +293,28 @@ export class SyncManager {
 		// Create an S3Object for compatibility with existing S3Service
 		const s3Object: S3Object = {
 			Key: remoteFile.key,
-			LastModified: new Date(remoteFile.mtime)
+			LastModified: new Date(remoteFile.mtime),
 		};
 
 		const content = await this.s3Service.downloadFile(s3Object);
-		
+
 		// Ensure parent folder exists
 		await this.ensureFolderExists(decision.filePath);
-		
+
 		// Check if local file exists
-		const localFile = this.app.vault.getAbstractFileByPath(decision.filePath);
-		
+		const localFile = this.app.vault.getAbstractFileByPath(
+			decision.filePath,
+		);
+
 		if (localFile && !(localFile instanceof TFolder)) {
 			// File exists, modify it
 			await this.app.vault.modifyBinary(localFile as TFile, content, {
-				mtime: remoteFile.mtime
+				mtime: remoteFile.mtime,
 			});
 		} else {
 			// File doesn't exist, create it
 			await this.app.vault.createBinary(decision.filePath, content, {
-				mtime: remoteFile.mtime
+				mtime: remoteFile.mtime,
 			});
 		}
 	}
@@ -297,8 +323,10 @@ export class SyncManager {
 	 * Executes an upload action
 	 */
 	private async executeUpload(decision: FileSyncDecision): Promise<void> {
-		const localFile = this.app.vault.getAbstractFileByPath(decision.filePath);
-		
+		const localFile = this.app.vault.getAbstractFileByPath(
+			decision.filePath,
+		);
+
 		if (!localFile || localFile instanceof TFolder) {
 			throw new Error(`Local file not found: ${decision.filePath}`);
 		}
@@ -308,11 +336,13 @@ export class SyncManager {
 	}
 
 	/**
-	 * Executes a delete action  
+	 * Executes a delete action
 	 */
 	private async executeDelete(decision: FileSyncDecision): Promise<void> {
 		if (decision.action === SyncAction.DELETE_LOCAL) {
-			const localFile = this.app.vault.getAbstractFileByPath(decision.filePath);
+			const localFile = this.app.vault.getAbstractFileByPath(
+				decision.filePath,
+			);
 			if (localFile && !(localFile instanceof TFolder)) {
 				await this.app.vault.delete(localFile);
 			}
@@ -326,35 +356,37 @@ export class SyncManager {
 	 */
 	private async handleConflict(decision: FileSyncDecision): Promise<void> {
 		// For now, use the same strategy as before: keep local version, save remote as conflict file
-		const localFile = this.app.vault.getAbstractFileByPath(decision.filePath) as TFile;
+		const localFile = this.app.vault.getAbstractFileByPath(
+			decision.filePath,
+		) as TFile;
 		const remoteFiles = await this.getRemoteFilesMap();
 		const remoteFile = remoteFiles.get(decision.filePath);
-		
+
 		if (!localFile || !remoteFile) {
-			console.warn(`S3 Sync: Cannot resolve conflict for ${decision.filePath} - missing file`);
+			console.warn(
+				`S3 Sync: Cannot resolve conflict for ${decision.filePath} - missing file`,
+			);
 			return;
 		}
 
 		// Create S3Object for compatibility
 		const s3Object: S3Object = {
 			Key: remoteFile.key,
-			LastModified: new Date(remoteFile.mtime)
+			LastModified: new Date(remoteFile.mtime),
 		};
 
 		const remoteContent = await this.s3Service.downloadFile(s3Object);
 		const conflictFileName = this.getConflictFileName(
 			decision.filePath,
-			new Date(remoteFile.mtime)
+			new Date(remoteFile.mtime),
 		);
 
 		// Save the remote version with a new name
 		await this.app.vault.createBinary(conflictFileName, remoteContent, {
-			mtime: remoteFile.mtime
+			mtime: remoteFile.mtime,
 		});
 
-		new Notice(
-			`S3 Sync: Saved remote version as ${conflictFileName}`,
-		);
+		new Notice(`S3 Sync: Saved remote version as ${conflictFileName}`);
 
 		// Upload the local version to overwrite the remote
 		const localContent = await this.app.vault.readBinary(localFile);
@@ -368,7 +400,8 @@ export class SyncManager {
 		const folderPath = filePath.substring(0, filePath.lastIndexOf("/"));
 		if (folderPath) {
 			try {
-				const existingFolder = this.app.vault.getAbstractFileByPath(folderPath);
+				const existingFolder =
+					this.app.vault.getAbstractFileByPath(folderPath);
 				if (!existingFolder) {
 					await this.app.vault.createFolder(folderPath);
 				}
@@ -383,8 +416,12 @@ export class SyncManager {
 		conflictDate: Date,
 	): string {
 		const lastDotIndex = originalPath.lastIndexOf(".");
-		const extension = lastDotIndex > -1 ? originalPath.substring(lastDotIndex) : "";
-		const baseName = lastDotIndex > -1 ? originalPath.substring(0, lastDotIndex) : originalPath;
+		const extension =
+			lastDotIndex > -1 ? originalPath.substring(lastDotIndex) : "";
+		const baseName =
+			lastDotIndex > -1
+				? originalPath.substring(0, lastDotIndex)
+				: originalPath;
 		const timestamp =
 			conflictDate.getFullYear().toString() +
 			(conflictDate.getMonth() + 1).toString().padStart(2, "0") +
@@ -397,8 +434,6 @@ export class SyncManager {
 		return `${baseName} (conflict ${timestamp})${extension}`;
 	}
 
-
-
 	/**
 	 * Updates the sync state after successful sync
 	 */
@@ -406,17 +441,14 @@ export class SyncManager {
 		// Re-scan local and remote to get fresh state after sync actions
 		const [localFiles, remoteFiles] = await Promise.all([
 			this.generateLocalFilesMap(),
-			this.generateRemoteFilesMap()
+			this.generateRemoteFilesMap(),
 		]);
 
 		// Build new state map with both local and remote timestamps
 		const newState: SyncState = {};
 
 		// Get all unique file paths
-		const allPaths = new Set([
-			...localFiles.keys(),
-			...remoteFiles.keys()
-		]);
+		const allPaths = new Set([...localFiles.keys(), ...remoteFiles.keys()]);
 
 		for (const path of allPaths) {
 			const localFile = localFiles.get(path);
@@ -424,7 +456,7 @@ export class SyncManager {
 
 			newState[path] = {
 				localMtime: localFile?.mtime,
-				remoteMtime: remoteFile?.mtime
+				remoteMtime: remoteFile?.mtime,
 			};
 		}
 
@@ -441,21 +473,30 @@ export class SyncManager {
 	private async pruneEmptyFolders(): Promise<void> {
 		try {
 			const allFiles = this.app.vault.getAllLoadedFiles();
-			const folders = allFiles.filter(f => f instanceof TFolder) as TFolder[];
-			
+			const folders = allFiles.filter(
+				(f) => f instanceof TFolder,
+			) as TFolder[];
+
 			// Sort by depth (deepest first) to prune from bottom up
-			folders.sort((a, b) => b.path.split("/").length - a.path.split("/").length);
+			folders.sort(
+				(a, b) => b.path.split("/").length - a.path.split("/").length,
+			);
 
 			for (const folder of folders) {
 				if (folder.children && folder.children.length === 0) {
 					// Don't delete the plugin's own folder or system folders
-					if (!folder.path.startsWith(".obsidian") || folder.path === ".obsidian/plugins/kisss3") {
+					if (
+						!folder.path.startsWith(".obsidian") ||
+						folder.path === ".obsidian/plugins/kisss3"
+					) {
 						continue;
 					}
-					
+
 					try {
 						await this.app.vault.delete(folder);
-						console.log(`S3 Sync: Pruned empty folder: ${folder.path}`);
+						console.log(
+							`S3 Sync: Pruned empty folder: ${folder.path}`,
+						);
 					} catch (e) {
 						// Ignore errors when pruning folders
 					}
@@ -479,7 +520,10 @@ export class SyncManager {
 				console.log(`S3 Sync: Deleted remote file ${path}`);
 			}
 		} catch (error) {
-			console.error(`S3 Sync: Error deleting remote file ${path}:`, error);
+			console.error(
+				`S3 Sync: Error deleting remote file ${path}:`,
+				error,
+			);
 		}
 	}
 }
