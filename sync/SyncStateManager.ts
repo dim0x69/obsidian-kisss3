@@ -1,31 +1,27 @@
-import { App, TFolder, TFile } from "obsidian";
+import { App, Plugin } from "obsidian";
 import { SyncState } from "./SyncTypes";
-import { normalizePath } from "obsidian";
 
 /**
- * Manages the sync state file (.obsidian/plugins/kisss3/sync-state.json)
+ * Manages the sync state using Obsidian's Plugin Data API
  */
 export class SyncStateManager {
-	private readonly STATE_DIR = ".kisss3";
-	private readonly STATE_FILE_PATH = `${this.STATE_DIR}/sync-state.json`;
-	constructor(private app: App) {}
+	private readonly SYNC_STATE_KEY = "syncState";
+	
+	constructor(private app: App, private plugin: Plugin) {}
 
 	/**
-	 * Loads the sync state from the state file
-	 * @returns SyncState object or empty object if file doesn't exist
+	 * Loads the sync state from plugin data API
+	 * @returns SyncState object or empty object if no state exists
 	 */
 	async loadState(): Promise<SyncState> {
 		try {
-			const stateFile = this.app.vault.getAbstractFileByPath(
-				this.STATE_FILE_PATH,
-			);
-			if (!stateFile || stateFile instanceof TFolder) {
-				// File doesn't exist or is a folder
-				return {};
+			const pluginData = await this.plugin.loadData();
+			if (pluginData?.[this.SYNC_STATE_KEY]) {
+				return pluginData[this.SYNC_STATE_KEY] as SyncState;
 			}
 
-			const content = await this.app.vault.read(stateFile as TFile);
-			return JSON.parse(content) as SyncState;
+			// No state found, return empty state
+			return {};
 		} catch (error) {
 			console.warn(
 				"S3 Sync: Could not load sync state, starting with empty state:",
@@ -36,45 +32,31 @@ export class SyncStateManager {
 	}
 
 	/**
-	 * Saves the sync state to the state file
+	 * Saves the sync state to plugin data API
 	 * @param state The sync state to save
 	 */
 	async saveState(state: SyncState): Promise<void> {
 		try {
-			// Ensure the plugin directory exists
 			console.info("Saving sync state...");
-			await this.ensurePluginDirectoryExists();
-
-			const content = JSON.stringify(state, null, 2);
-			const stateFile = this.app.vault.getAbstractFileByPath(
-				normalizePath(this.STATE_FILE_PATH),
-			);
-			console.log("State file:", stateFile);
-
-			if (stateFile && !(stateFile instanceof TFolder)) {
-				// File exists, modify it
-				await this.app.vault.modify(stateFile as TFile, content);
-			} else {
-				// File doesn't exist, create it
-				await this.app.vault.create(this.STATE_FILE_PATH, content);
-			}
+			
+			// Load existing plugin data to preserve other data
+			const pluginData = await this.plugin.loadData();
+			const safePluginData = pluginData ?? {};
+			
+			// Update sync state in plugin data
+			safePluginData[this.SYNC_STATE_KEY] = state;
+			
+			// Save back to plugin data API
+			await this.plugin.saveData(safePluginData);
+			
+			console.info("S3 Sync: Successfully saved sync state to plugin data API");
 		} catch (error) {
 			console.error("S3 Sync: Failed to save sync state:", error);
 			throw new Error(`Failed to save sync state: ${error.message}`);
 		}
 	}
 
-	/**
-	 * Ensures the plugin directory exists
-	 */
-	private async ensurePluginDirectoryExists(): Promise<void> {
-		const existingDir = this.app.vault.getAbstractFileByPath(
-			normalizePath(this.STATE_DIR),
-		);
-		if (!existingDir) {
-			await this.app.vault.createFolder(this.STATE_DIR);
-		}
-	}
+
 
 	/**
 	 * Clears the sync state (useful for testing or reset scenarios)

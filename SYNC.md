@@ -113,16 +113,16 @@ The sync process includes:
 
 ## Technical Implementation Details
 
-- **State File**: Sync state is stored in `.obsidian/plugins/kisss3/sync-state.json` as a JSON map of `{ "file/path": "mtime_timestamp" }`
+- **State Storage**: Sync state is stored using Obsidian's Plugin Data API, ensuring it's always hidden from users and robustly managed
 - **Timestamp precision**: Uses millisecond precision Unix timestamps for modification time comparisons
 - **Timestamp tolerance**: Uses 2-second tolerance when comparing timestamps to account for different file system precisions (S3, NTFS, APFS, ext4) and prevent false modifications
 - **Exclusion rules**: Files/folders beginning with a dot (`.`) are ignored in all sync operations
 - **Safe execution order**: Actions are executed in order: downloads → uploads → deletes to prevent data loss
-- **Atomic state updates**: State file is only updated after successful completion of all sync actions
+- **Atomic state updates**: State is only updated after successful completion of all sync actions
 - **Folder creation**: Missing folder structures are automatically created when downloading files
 - **Folder pruning**: Empty folders are optionally pruned after sync completion
 - **S3 prefixes**: Remote file paths respect the configured S3 prefix setting
-- **Error handling**: Any sync error aborts the operation and prevents state file updates
+- **Error handling**: Any sync error aborts the operation and prevents state updates
 
 ## Initial Sync Scenarios
 
