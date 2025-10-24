@@ -4,7 +4,7 @@ This document describes the file synchronization behavior between your local Obs
 
 ## Sync Process Overview
 
-The plugin performs three-source synchronization by comparing file states between **Local** vault files, **Remote** S3 objects, and a **State** file, that tracks the last known synchronized state of each file.
+The plugin performs three-source synchronization by comparing file states between **Local** vault files, **Remote** S3 objects, and a **State** file, that tracks the last known synchronized state of each file. The state file contains the modification timestamps for the remote and the local files. For remote files, the S3 LastModified timestamp is used. For local files, the file's mtime is used. This allows to compare the modification timestamps of the remote and local files to determine if a file has been modified, created or deleted on both sides.
 
 ### Three-Source Algorithm
 
@@ -55,3 +55,13 @@ The three-source algorithm categorizes each file's status (Created/Modified/Dele
 - **Folder pruning**: Empty folders are optionally pruned after sync completion
 - **S3 prefixes**: Remote file paths respect the configured S3 prefix setting
 - **Error handling**: Any sync error aborts the operation and prevents state updates
+
+
+-----
+
+# Deliberate Design Decisions
+
+* Files are uploaded as application/octet-stream MIME type to S3. I tried to use npm mime-types package, but what needs nodejs "path" to work.
+Installing path-browsify or other modules, would make it work in browser but add extra dependencies and complexity.
+* I tried to implement a timestamp-based sync, but that makes it basically impossible to track remote deletions. The current solution is the
+simples one, that works in both directions including deletions.

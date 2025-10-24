@@ -15,26 +15,22 @@ This plugin is designed for users who want a straightforward way to back up or s
 
 ## How to Use
 
-1. **Install the Plugin**  
+1. **Install the Plugin**
    Download or clone this repository into your Obsidian plugins folder, or install via Obsidian's community plugins if available.
 
-2. **Configure S3 Access**  
+2. **Configure S3 Access**
    In the plugin settings, enter your Amazon S3 credentials and specify the bucket you want to use for sync.
    - **Access Key ID**
    - **Secret Access Key**
    - **Bucket Name**
    - (Optional) Region
 
-3. **Sync Your Vault**  
+3. **Sync Your Vault**
    Use the plugin's commands or buttons to start syncing. The plugin will:
    - Upload changed or new notes to S3.
    - Download new or updated notes from S3.
    - Remove files deleted on either side.
    - Handle conflicts by saving both versions.
 
-4. **Review Conflicts**  
+4. **Review Conflicts**
    If any conflicts are detected, check your vault for duplicated files and review the changes.
-
----
-
-For more details or to contribute, visit the [GitHub repository](https://github.com/dim0x69/obsidian-kisss3).
