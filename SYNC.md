@@ -37,6 +37,20 @@ The three-source algorithm categorizes each file's status (Created/Modified/Dele
 | Unchanged         | Unchanged         | Do Nothing           | No changes                                       |
 
 
+-----
+
+1. File is locally created, sync started, 
+- state file entry does not exist: undef, undef
+- local file mtime: t1
+- remote files mtime: undef
+- => CREATED, UPLOADED: t2
+- => state file: t1, t2
+
+2. File is locally removed, sync started 
+-...
+
+
+
 ### Conflict Resolution Rules
 
 1. **Modification vs. Deletion**: Modification wins (upload or download accordingly)
