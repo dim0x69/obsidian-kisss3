@@ -76,12 +76,12 @@ export class SyncManager {
 				stateFiles,
 			);
 
-			// Step 3: Execute sync actions in safe order (downloads → uploads → deletes)
-			await this.executeSyncDecisions(decisions, syncNotice);
+			// Step 3: Execute sync actions in safe order, updating state map on-the-fly
+			await this.executeSyncDecisions(decisions, syncNotice, stateFiles);
 
-			// Step 4: Rescan and save new state (only after successful sync)
+			// Step 4: Save updated state map (no rescanning needed)
 			syncNotice.setMessage("S3 Sync: Updating state...");
-			await this.updateSyncState();
+			await this.saveUpdatedSyncState(stateFiles);
 
 			syncNotice.setMessage("S3 Sync: Sync complete!");
 		} catch (error) {
@@ -237,6 +237,7 @@ export class SyncManager {
 	private async executeSyncDecisions(
 		decisions: FileSyncDecision[],
 		syncNotice: Notice,
+		stateFiles: StateFilesMap,
 	): Promise<void> {
 		const downloads = decisions.filter(
 			(d) => d.action === SyncAction.DOWNLOAD,
@@ -254,19 +255,19 @@ export class SyncManager {
 		// Execute downloads first
 		for (const decision of downloads) {
 			syncNotice.setMessage(`S3 Sync: Downloading ${decision.filePath}`);
-			await this.executeDownload(decision);
+			await this.executeDownload(decision, stateFiles);
 		}
 
 		// Execute uploads second
 		for (const decision of uploads) {
 			syncNotice.setMessage(`S3 Sync: Uploading ${decision.filePath}`);
-			await this.executeUpload(decision);
+			await this.executeUpload(decision, stateFiles);
 		}
 
 		// Execute deletes last
 		for (const decision of deletes) {
 			syncNotice.setMessage(`S3 Sync: Deleting ${decision.filePath}`);
-			await this.executeDelete(decision);
+			await this.executeDelete(decision, stateFiles);
 		}
 
 		// Handle conflicts
@@ -274,14 +275,14 @@ export class SyncManager {
 			syncNotice.setMessage(
 				`S3 Sync: Resolving conflict for ${decision.filePath}`,
 			);
-			await this.handleConflict(decision);
+			await this.handleConflict(decision, stateFiles);
 		}
 	}
 
 	/**
-	 * Executes a download action
+	 * Executes a download action and updates state map immediately
 	 */
-	private async executeDownload(decision: FileSyncDecision): Promise<void> {
+	private async executeDownload(decision: FileSyncDecision, stateFiles: StateFilesMap): Promise<void> {
 		// Get the remote file info from cache
 		const remoteFiles = await this.getRemoteFilesMap();
 		const remoteFile = remoteFiles.get(decision.filePath);
@@ -317,12 +318,18 @@ export class SyncManager {
 				mtime: remoteFile.mtime,
 			});
 		}
+
+		// Update state map immediately after successful download
+		stateFiles.set(decision.filePath, {
+			localMtime: remoteFile.mtime,  // Local file now has remote's mtime
+			remoteMtime: remoteFile.mtime,
+		});
 	}
 
 	/**
-	 * Executes an upload action
+	 * Executes an upload action and updates state map immediately
 	 */
-	private async executeUpload(decision: FileSyncDecision): Promise<void> {
+	private async executeUpload(decision: FileSyncDecision, stateFiles: StateFilesMap): Promise<void> {
 		const localFile = this.app.vault.getAbstractFileByPath(
 			decision.filePath,
 		);
@@ -333,12 +340,19 @@ export class SyncManager {
 
 		const content = await this.app.vault.readBinary(localFile as TFile);
 		await this.s3Service.uploadFile(localFile as TFile, content);
+
+		// Update state map immediately after successful upload
+		const localMtime = (localFile as TFile).stat.mtime;
+		stateFiles.set(decision.filePath, {
+			localMtime: localMtime,
+			remoteMtime: localMtime,  // Remote now has the same mtime as local after upload
+		});
 	}
 
 	/**
-	 * Executes a delete action
+	 * Executes a delete action and updates state map immediately
 	 */
-	private async executeDelete(decision: FileSyncDecision): Promise<void> {
+	private async executeDelete(decision: FileSyncDecision, stateFiles: StateFilesMap): Promise<void> {
 		if (decision.action === SyncAction.DELETE_LOCAL) {
 			const localFile = this.app.vault.getAbstractFileByPath(
 				decision.filePath,
@@ -346,15 +360,33 @@ export class SyncManager {
 			if (localFile && !(localFile instanceof TFolder)) {
 				await this.app.vault.delete(localFile);
 			}
+			// Update state map: file deleted locally, clear localMtime
+			const currentState = stateFiles.get(decision.filePath) || {};
+			stateFiles.set(decision.filePath, {
+				localMtime: undefined,
+				remoteMtime: currentState.remoteMtime,
+			});
 		} else if (decision.action === SyncAction.DELETE_REMOTE) {
 			await this.s3Service.deleteRemoteFile(decision.filePath);
+			// Update state map: file deleted remotely, clear remoteMtime
+			const currentState = stateFiles.get(decision.filePath) || {};
+			stateFiles.set(decision.filePath, {
+				localMtime: currentState.localMtime,
+				remoteMtime: undefined,
+			});
+		}
+
+		// If both local and remote are now undefined, remove the entry completely
+		const updatedState = stateFiles.get(decision.filePath);
+		if (updatedState && !updatedState.localMtime && !updatedState.remoteMtime) {
+			stateFiles.delete(decision.filePath);
 		}
 	}
 
 	/**
-	 * Handles conflict resolution
+	 * Handles conflict resolution and updates state map immediately
 	 */
-	private async handleConflict(decision: FileSyncDecision): Promise<void> {
+	private async handleConflict(decision: FileSyncDecision, stateFiles: StateFilesMap): Promise<void> {
 		// For now, use the same strategy as before: keep local version, save remote as conflict file
 		const localFile = this.app.vault.getAbstractFileByPath(
 			decision.filePath,
@@ -391,6 +423,13 @@ export class SyncManager {
 		// Upload the local version to overwrite the remote
 		const localContent = await this.app.vault.readBinary(localFile);
 		await this.s3Service.uploadFile(localFile, localContent);
+
+		// Update state map: local version wins, so update with local mtime for both local and remote
+		const localMtime = localFile.stat.mtime;
+		stateFiles.set(decision.filePath, {
+			localMtime: localMtime,
+			remoteMtime: localMtime,  // Remote now has same content as local after upload
+		});
 	}
 
 	/**
@@ -435,32 +474,17 @@ export class SyncManager {
 	}
 
 	/**
-	 * Updates the sync state after successful sync
+	 * Saves the updated sync state from the cached state map (no rescanning needed)
 	 */
-	private async updateSyncState(): Promise<void> {
-		// Re-scan local and remote to get fresh state after sync actions
-		const [localFiles, remoteFiles] = await Promise.all([
-			this.generateLocalFilesMap(),
-			this.generateRemoteFilesMap(),
-		]);
-
-		// Build new state map with both local and remote timestamps
+	private async saveUpdatedSyncState(stateFiles: StateFilesMap): Promise<void> {
+		// Convert Map back to SyncState object for saving
 		const newState: SyncState = {};
-
-		// Get all unique file paths
-		const allPaths = new Set([...localFiles.keys(), ...remoteFiles.keys()]);
-
-		for (const path of allPaths) {
-			const localFile = localFiles.get(path);
-			const remoteFile = remoteFiles.get(path);
-
-			newState[path] = {
-				localMtime: localFile?.mtime,
-				remoteMtime: remoteFile?.mtime,
-			};
+		
+		for (const [filePath, fileState] of stateFiles.entries()) {
+			newState[filePath] = fileState;
 		}
 
-		// Save the new state
+		// Save the updated state
 		await this.stateManager.saveState(newState);
 
 		// Optional: Prune empty folders
