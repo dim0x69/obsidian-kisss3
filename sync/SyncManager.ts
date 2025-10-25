@@ -320,8 +320,14 @@ export class SyncManager {
 		}
 
 		// Update state map immediately after successful download
+		// Get the actual local file mtime after download
+		const downloadedLocalFile = this.app.vault.getAbstractFileByPath(decision.filePath) as TFile;
+		if (!downloadedLocalFile) {
+			throw new Error(`Downloaded file not found after creation: ${decision.filePath}`);
+		}
+		
 		stateFiles.set(decision.filePath, {
-			localMtime: remoteFile.mtime,  // Local and remote files now have same mtime
+			localMtime: downloadedLocalFile.stat.mtime,  // Use actual local file mtime
 			remoteMtime: remoteFile.mtime,
 		});
 	}
