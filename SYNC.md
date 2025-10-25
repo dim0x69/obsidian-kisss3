@@ -49,7 +49,10 @@ Notes
 - => state file: t1, t2
 
 2. File is locally removed, sync started 
--...
+- state file: l: t1, r: t2 
+- local mtime: undef
+- remote mtime: t2
+- => DELETE_REMOTE
 
 ------
 
