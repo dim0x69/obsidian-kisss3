@@ -39,6 +39,8 @@ The three-source algorithm categorizes each file's status (Created/Modified/Dele
 
 -----
 
+Notes
+
 1. File is locally created, sync started, 
 - state file entry does not exist: undef, undef
 - local file mtime: t1
@@ -48,6 +50,8 @@ The three-source algorithm categorizes each file's status (Created/Modified/Dele
 
 2. File is locally removed, sync started 
 -...
+
+------
 
 
 
