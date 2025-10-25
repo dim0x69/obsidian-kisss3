@@ -339,13 +339,13 @@ export class SyncManager {
 		}
 
 		const content = await this.app.vault.readBinary(localFile as TFile);
-		await this.s3Service.uploadFile(localFile as TFile, content);
+		const actualRemoteMtime = await this.s3Service.uploadFile(localFile as TFile, content);
 
-		// Update state map immediately after successful upload
-		const currentMtime = (localFile as TFile).stat.mtime;
+		// Update state map immediately after successful upload with actual S3 timestamps
+		const localMtime = (localFile as TFile).stat.mtime;
 		stateFiles.set(decision.filePath, {
-			localMtime: currentMtime,
-			remoteMtime: currentMtime,  // Remote now has the same mtime as local after upload
+			localMtime: localMtime,
+			remoteMtime: actualRemoteMtime,  // Use actual S3 LastModified timestamp
 		});
 	}
 
@@ -422,13 +422,13 @@ export class SyncManager {
 
 		// Upload the local version to overwrite the remote
 		const localContent = await this.app.vault.readBinary(localFile);
-		await this.s3Service.uploadFile(localFile, localContent);
+		const actualRemoteMtime = await this.s3Service.uploadFile(localFile, localContent);
 
-		// Update state map: local version wins, so update with resolved mtime for both local and remote
-		const resolvedMtime = localFile.stat.mtime;
+		// Update state map: local version wins, use actual S3 timestamp for remote
+		const localMtime = localFile.stat.mtime;
 		stateFiles.set(decision.filePath, {
-			localMtime: resolvedMtime,
-			remoteMtime: resolvedMtime,  // Remote now has same content as local after upload
+			localMtime: localMtime,
+			remoteMtime: actualRemoteMtime,  // Use actual S3 LastModified timestamp
 		});
 	}
 

@@ -109,7 +109,7 @@ export class S3Service {
 		return remoteFiles;
 	}
 
-	async uploadFile(file: TFile, content: ArrayBuffer): Promise<void> {
+	async uploadFile(file: TFile, content: ArrayBuffer): Promise<number> {
 		if (!this.isConfigured()) throw new Error("S3 client not configured.");
 
 		const body = new Uint8Array(content);
@@ -123,6 +123,17 @@ export class S3Service {
 		});
 
 		await this.client!.send(command);
+
+		// After upload, retrieve the actual LastModified timestamp from S3
+		const remoteFiles = await this.listRemoteFiles();
+		const remoteFile = remoteFiles.get(file.path);
+		
+		if (remoteFile && remoteFile.LastModified) {
+			return remoteFile.LastModified.getTime();
+		}
+		
+		// Fallback to current time if we can't get the S3 timestamp
+		return Date.now();
 	}
 
 	async downloadFile(s3Object: S3Object): Promise<ArrayBuffer> {
