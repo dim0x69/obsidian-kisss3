@@ -11,6 +11,7 @@ import {
 } from "@aws-sdk/client-s3";
 
 import { S3SyncSettings } from "../settings";
+import { KISSS3_DEBUG_LOG } from "main";
 
 // Manages all interactions with the S3-compatible object storage.
 export class S3Service {
@@ -75,7 +76,11 @@ export class S3Service {
 
 		let continuationToken: string | undefined = undefined;
 		let isTruncated = true;
-
+		if (KISSS3_DEBUG_LOG) {
+			console.log(
+				`listRemoteFiles(), bucket: ${this.settings.bucketName}, prefix: ${this.settings.remotePrefix}`,
+			);
+		}
 		while (isTruncated) {
 			const command = new ListObjectsV2Command({
 				Bucket: this.settings.bucketName,
@@ -107,6 +112,9 @@ export class S3Service {
 			isTruncated = response.IsTruncated ?? false;
 			continuationToken = response.NextContinuationToken;
 		}
+		if (KISSS3_DEBUG_LOG) {
+			console.log(`listRemoteFiles(),found ${remoteFiles.size} files`);
+		}
 		return remoteFiles;
 	}
 
@@ -114,7 +122,11 @@ export class S3Service {
 		if (!this.isConfigured()) throw new Error("S3 client not configured.");
 
 		const body = new Uint8Array(content);
-
+		if (KISSS3_DEBUG_LOG) {
+			console.log(
+				`uploadFile(${file.path}), bucket: ${this.settings.bucketName}, key: ${this.getRemoteKey(file.path)}`,
+			);
+		}
 		const command = new PutObjectCommand({
 			Bucket: this.settings.bucketName,
 			Key: this.getRemoteKey(file.path),
@@ -134,19 +146,22 @@ export class S3Service {
 	 */
 	async getFileMetadata(filePath: string): Promise<number> {
 		if (!this.isConfigured()) throw new Error("S3 client not configured.");
-
+		if (KISSS3_DEBUG_LOG) {
+			console.log(`getFileMetadata(${filePath})`);
+		}
 		const command = new HeadObjectCommand({
 			Bucket: this.settings.bucketName,
 			Key: this.getRemoteKey(filePath),
 		});
 
 		const response = await this.client!.send(command);
-		
+
 		if (response.LastModified) {
 			return response.LastModified.getTime();
 		}
-		
+
 		// Fallback to current time if LastModified is not available
+		console.error(`LastModified not available for ${filePath}`);
 		return Date.now();
 	}
 
