@@ -477,11 +477,14 @@ export class SyncManager {
 	 * Saves the updated sync state from the cached state map (no rescanning needed)
 	 */
 	private async saveUpdatedSyncState(stateFiles: StateFilesMap): Promise<void> {
-		// Convert Map back to SyncState object for saving
+		// Convert Map back to SyncState object for saving, filtering out obsolete entries
 		const newState: SyncState = {};
 		
 		for (const [filePath, fileState] of stateFiles.entries()) {
-			newState[filePath] = fileState;
+			// Only include entries where at least one timestamp is defined (not obsolete)
+			if (fileState.localMtime !== undefined || fileState.remoteMtime !== undefined) {
+				newState[filePath] = fileState;
+			}
 		}
 
 		// Save the updated state
