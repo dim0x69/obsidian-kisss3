@@ -321,7 +321,7 @@ export class SyncManager {
 
 		// Update state map immediately after successful download
 		stateFiles.set(decision.filePath, {
-			localMtime: remoteFile.mtime,  // Local file now has remote's mtime
+			localMtime: remoteFile.mtime,  // Local and remote files now have same mtime
 			remoteMtime: remoteFile.mtime,
 		});
 	}
@@ -342,10 +342,10 @@ export class SyncManager {
 		await this.s3Service.uploadFile(localFile as TFile, content);
 
 		// Update state map immediately after successful upload
-		const localMtime = (localFile as TFile).stat.mtime;
+		const currentMtime = (localFile as TFile).stat.mtime;
 		stateFiles.set(decision.filePath, {
-			localMtime: localMtime,
-			remoteMtime: localMtime,  // Remote now has the same mtime as local after upload
+			localMtime: currentMtime,
+			remoteMtime: currentMtime,  // Remote now has the same mtime as local after upload
 		});
 	}
 
@@ -424,11 +424,11 @@ export class SyncManager {
 		const localContent = await this.app.vault.readBinary(localFile);
 		await this.s3Service.uploadFile(localFile, localContent);
 
-		// Update state map: local version wins, so update with local mtime for both local and remote
-		const localMtime = localFile.stat.mtime;
+		// Update state map: local version wins, so update with resolved mtime for both local and remote
+		const resolvedMtime = localFile.stat.mtime;
 		stateFiles.set(decision.filePath, {
-			localMtime: localMtime,
-			remoteMtime: localMtime,  // Remote now has same content as local after upload
+			localMtime: resolvedMtime,
+			remoteMtime: resolvedMtime,  // Remote now has same content as local after upload
 		});
 	}
 
