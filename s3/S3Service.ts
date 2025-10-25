@@ -6,6 +6,7 @@ import {
 	GetObjectCommand,
 	PutObjectCommand,
 	DeleteObjectCommand,
+	HeadObjectCommand,
 	_Object as S3Object, // Alias to avoid conflict with Object
 } from "@aws-sdk/client-s3";
 
@@ -124,15 +125,28 @@ export class S3Service {
 
 		await this.client!.send(command);
 
-		// After upload, retrieve the actual LastModified timestamp from S3
-		const remoteFiles = await this.listRemoteFiles();
-		const remoteFile = remoteFiles.get(file.path);
+		// After upload, retrieve the actual LastModified timestamp from S3 using HeadObject
+		return await this.getFileMetadata(file.path);
+	}
+
+	/**
+	 * Gets the metadata for a specific file from S3 using HeadObject
+	 */
+	async getFileMetadata(filePath: string): Promise<number> {
+		if (!this.isConfigured()) throw new Error("S3 client not configured.");
+
+		const command = new HeadObjectCommand({
+			Bucket: this.settings.bucketName,
+			Key: this.getRemoteKey(filePath),
+		});
+
+		const response = await this.client!.send(command);
 		
-		if (remoteFile && remoteFile.LastModified) {
-			return remoteFile.LastModified.getTime();
+		if (response.LastModified) {
+			return response.LastModified.getTime();
 		}
 		
-		// Fallback to current time if we can't get the S3 timestamp
+		// Fallback to current time if LastModified is not available
 		return Date.now();
 	}
 
