@@ -2,7 +2,7 @@
 	"id": "kisss3",
 	"name": "kisss3",
 	"version": "11.0.0",
-	"minAppVersion": "1.0.0",
+	"minAppVersion": "0.13.25",
 	"description": "Keep it simple, stupid! S3 Plugin for Obsidian. Sync your vault from and to S3.",
 	"author": "Dimitrios Slamaris",
 	"authorUrl": "https://github.com/dim0x69",

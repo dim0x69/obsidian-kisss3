@@ -12,6 +12,7 @@ import {
 
 import { S3SyncSettings } from "../settings";
 import S3SyncPlugin from "../main";
+import { ObsHttpHandler } from "./ObsHttpHandler";
 
 // Manages all interactions with the S3-compatible object storage.
 export class S3Service {
@@ -36,6 +37,8 @@ export class S3Service {
 					accessKeyId: this.settings.accessKeyId,
 					secretAccessKey: this.settings.secretAccessKey,
 				},
+				// Use our custom HTTP handler that leverages Obsidian's requestUrl API
+				requestHandler: new ObsHttpHandler(),
 			});
 		} else {
 			this.client = null;
