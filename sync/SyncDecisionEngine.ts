@@ -153,15 +153,7 @@ export class SyncDecisionEngine {
 		}
 
 		if (file && !stateTime) {
-			// File exists now but wasn't in state for this side
-			// Check if there's any sync state at all for this file
-			if (!syncState || (!syncState.localMtime && !syncState.remoteMtime)) {
-				return FileStatus.CREATED; // Completely new file
-			} else {
-				// File exists on this side but there's state for the other side
-				// This suggests the file was created on this side after last sync
-				return FileStatus.CREATED;
-			}
+			return FileStatus.CREATED; // File exists now but wasn't in state for this side
 		}
 
 		if (file && stateTime) {
