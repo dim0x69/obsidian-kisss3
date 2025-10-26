@@ -25,7 +25,8 @@ export enum FileStatus {
 	CREATED = "CREATED",
 	MODIFIED = "MODIFIED", 
 	DELETED = "DELETED",
-	UNCHANGED = "UNCHANGED"
+	UNCHANGED = "UNCHANGED",
+	NONEXIST = "NONEXIST"
 }
 
 export enum SyncAction {

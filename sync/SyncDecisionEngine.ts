@@ -137,10 +137,16 @@ export class SyncDecisionEngine {
 				`determineFileStatus: file: ${file?.path}, stateTime: ${stateTime}, isLocal: ${isLocal}`,
 			);
 		}
-		// if !file, then the file did not exist in the respective
-		// map
+		
+		// if !file, then the file did not exist in the respective map
 		if (!file && !stateTime) {
-			return FileStatus.UNCHANGED; // File never existed (state) / does not exist now (local / remote)
+			// Check if there's any state for this file at all (on either side)
+			if (!syncState || (!syncState.localMtime && !syncState.remoteMtime)) {
+				return FileStatus.UNCHANGED; // File never existed anywhere
+			} else {
+				// File exists on the other side but not on this side, and no state for this side
+				return FileStatus.NONEXIST; // File exists elsewhere but not here
+			}
 		}
 
 		if (!file && stateTime) {
@@ -148,7 +154,15 @@ export class SyncDecisionEngine {
 		}
 
 		if (file && !stateTime) {
-			return FileStatus.CREATED; // File exists now but wasn't in state
+			// File exists now but wasn't in state for this side
+			// Check if there's any sync state at all for this file
+			if (!syncState || (!syncState.localMtime && !syncState.remoteMtime)) {
+				return FileStatus.CREATED; // Completely new file
+			} else {
+				// File exists on this side but there's state for the other side
+				// This suggests the file was created on this side after last sync
+				return FileStatus.CREATED;
+			}
 		}
 
 		if (file && stateTime) {
@@ -173,55 +187,72 @@ export class SyncDecisionEngine {
 	): SyncAction {
 		// Decision Matrix Implementation based on specifications
 
-		// Case: File only exists locally
+		// Case: File exists locally but not remotely
 		if (
-			localStatus !== FileStatus.UNCHANGED &&
+			(localStatus === FileStatus.UNCHANGED || localStatus === FileStatus.CREATED || localStatus === FileStatus.MODIFIED) &&
+			remoteStatus === FileStatus.NONEXIST
+		) {
+			return SyncAction.UPLOAD; // Upload local file to remote
+		}
+
+		// Case: File exists remotely but not locally  
+		if (
+			localStatus === FileStatus.NONEXIST &&
+			(remoteStatus === FileStatus.UNCHANGED || remoteStatus === FileStatus.CREATED || remoteStatus === FileStatus.MODIFIED)
+		) {
+			return SyncAction.DOWNLOAD; // Download remote file to local
+		}
+
+		// Case: File only exists locally (traditional case)
+		if (
+			(localStatus === FileStatus.CREATED || localStatus === FileStatus.MODIFIED) &&
 			remoteStatus === FileStatus.UNCHANGED
 		) {
-			if (localStatus === FileStatus.DELETED) {
-				return SyncAction.DELETE_REMOTE; // Already deleted locally
-			}
 			return SyncAction.UPLOAD; // Created or Modified locally
 		}
 
-		// Case: File only exists remotely
+		// Case: File only exists remotely (traditional case)
 		if (
 			localStatus === FileStatus.UNCHANGED &&
-			remoteStatus !== FileStatus.UNCHANGED
+			(remoteStatus === FileStatus.CREATED || remoteStatus === FileStatus.MODIFIED)
 		) {
-			if (remoteStatus === FileStatus.DELETED) {
-				return SyncAction.DELETE_LOCAL; // Already deleted remotely
-			}
 			return SyncAction.DOWNLOAD; // Created or Modified remotely
 		}
 
-		// Case: File deleted locally but exists/modified remotely
-		if (
-			localStatus === FileStatus.DELETED &&
-			remoteStatus !== FileStatus.UNCHANGED
-		) {
+		// Case: File deleted locally
+		if (localStatus === FileStatus.DELETED) {
+			if (remoteStatus === FileStatus.UNCHANGED || remoteStatus === FileStatus.CREATED || remoteStatus === FileStatus.MODIFIED) {
+				// File exists remotely but was deleted locally - modification wins
+				return SyncAction.DOWNLOAD;
+			}
 			if (remoteStatus === FileStatus.DELETED) {
 				return SyncAction.DO_NOTHING; // Both deleted
 			}
-			// Modification vs Deletion: Modification wins
-			return SyncAction.DOWNLOAD;
+			if (remoteStatus === FileStatus.NONEXIST || remoteStatus === FileStatus.UNCHANGED) {
+				return SyncAction.DELETE_REMOTE; // Delete from remote too
+			}
 		}
 
-		// Case: File deleted remotely but exists/modified locally
-		if (
-			remoteStatus === FileStatus.DELETED &&
-			localStatus !== FileStatus.UNCHANGED
-		) {
+		// Case: File deleted remotely
+		if (remoteStatus === FileStatus.DELETED) {
+			if (localStatus === FileStatus.UNCHANGED || localStatus === FileStatus.CREATED || localStatus === FileStatus.MODIFIED) {
+				// File exists locally but was deleted remotely - modification wins
+				return SyncAction.UPLOAD;
+			}
 			if (localStatus === FileStatus.DELETED) {
 				return SyncAction.DO_NOTHING; // Both deleted
 			}
-			// Modification vs Deletion: Modification wins
-			return SyncAction.UPLOAD;
+			if (localStatus === FileStatus.NONEXIST || localStatus === FileStatus.UNCHANGED) {
+				return SyncAction.DELETE_LOCAL; // Delete from local too
+			}
 		}
-		// Case: File exists in both locations
+
+
+		
+		// Case: File exists in both locations (both have changes)
 		if (
-			localStatus !== FileStatus.UNCHANGED &&
-			remoteStatus !== FileStatus.UNCHANGED
+			localStatus !== FileStatus.UNCHANGED && localStatus !== FileStatus.NONEXIST &&
+			remoteStatus !== FileStatus.UNCHANGED && remoteStatus !== FileStatus.NONEXIST
 		) {
 			return this.resolveConflict(
 				localStatus,
