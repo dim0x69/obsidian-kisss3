@@ -4,14 +4,22 @@ import {
 	HttpResponse,
 	HttpHandlerOptions,
 } from "@smithy/types";
-import type { RequestHandler, RequestHandlerOutput } from "@smithy/types";
+import type { RequestHandlerOutput } from "@smithy/types";
 import type { HttpHandler } from "@smithy/protocol-http";
 
 /**
  * Custom HTTP handler that uses Obsidian's requestUrl API to bypass CORS restrictions.
  * This handler implements the AWS SDK v3 RequestHandler interface.
+ * 
+ * Compatibility:
+ * - Desktop: Requires Obsidian >= 0.13.25 
+ * - Mobile: Requires Obsidian >= 1.1.1
+ * 
+ * The requestUrl API is available in both desktop and mobile environments and
+ * bypasses browser CORS restrictions that would normally prevent S3 API calls
+ * from within an Obsidian plugin.
  */
-export class ObsHttpHandler implements HttpHandler<{}> {
+export class ObsHttpHandler implements HttpHandler<Record<string, never>> {
 	private readonly defaultRequestTimeout = 30000; // 30 seconds
 
 	constructor(private options: { requestTimeout?: number } = {}) {}
@@ -28,8 +36,8 @@ export class ObsHttpHandler implements HttpHandler<{}> {
 	 * Get HTTP client configuration (required by HttpHandler interface)
 	 * @internal
 	 */
-	httpHandlerConfigs(): {} {
-		return this.options;
+	httpHandlerConfigs(): Record<string, never> {
+		return {};
 	}
 
 	async handle(
@@ -38,6 +46,9 @@ export class ObsHttpHandler implements HttpHandler<{}> {
 	): Promise<RequestHandlerOutput<HttpResponse>> {
 		// Build the URL from the request object
 		const url = this.buildUrl(request);
+		
+		// Optional debug logging (can be enabled for troubleshooting)
+		// console.debug(`ObsHttpHandler: ${request.method} ${url}`);
 
 		// Prepare headers
 		const headers: Record<string, string> = {};
@@ -75,14 +86,17 @@ export class ObsHttpHandler implements HttpHandler<{}> {
 			throw: false,
 		};
 
+		// Apply timeout if specified
+		const timeout = handlerOptions?.requestTimeout || this.options.requestTimeout || this.defaultRequestTimeout;
+		
 		try {
-			// Make the request using Obsidian's requestUrl API
-			const response = await requestUrl(requestParams);
+			// Make the request using Obsidian's requestUrl API with timeout
+			const response = await this.requestWithTimeout(requestParams, timeout);
 
 			// Convert Obsidian's response to AWS SDK expected format
 			const httpResponse: HttpResponse = {
 				statusCode: response.status,
-				headers: response.headers,
+				headers: response.headers || {},
 				// For AWS SDK, the body should be a readable stream or similar
 				// We'll use the arrayBuffer and create a simple stream-like object
 				body: this.createBodyStream(response.arrayBuffer),
@@ -134,7 +148,12 @@ export class ObsHttpHandler implements HttpHandler<{}> {
 	 * Creates a stream-like body object that AWS SDK expects
 	 * This handles the response body transformation
 	 */
-	private createBodyStream(arrayBuffer: ArrayBuffer): any {
+	private createBodyStream(arrayBuffer: ArrayBuffer): {
+		transformToByteArray: () => Promise<Uint8Array>;
+		transformToString: (encoding?: string) => Promise<string>;
+		pipe: () => void;
+		[Symbol.toStringTag]: string;
+	} {
 		// AWS SDK expects the response body to have a transformToByteArray method
 		// and potentially other stream-like methods
 		return {
@@ -144,7 +163,7 @@ export class ObsHttpHandler implements HttpHandler<{}> {
 			},
 			
 			// Additional methods that might be expected
-			transformToString: async (encoding: string = "utf-8"): Promise<string> => {
+			transformToString: async (encoding = "utf-8"): Promise<string> => {
 				const decoder = new TextDecoder(encoding);
 				return decoder.decode(arrayBuffer);
 			},
@@ -157,6 +176,30 @@ export class ObsHttpHandler implements HttpHandler<{}> {
 			// Make it look like it has the expected interface
 			[Symbol.toStringTag]: "ObsidianRequestBody",
 		};
+	}
+
+	/**
+	 * Makes a request with timeout support
+	 */
+	private async requestWithTimeout(
+		requestParams: RequestUrlParam,
+		timeoutMs: number
+	): Promise<{ status: number; headers: Record<string, string>; arrayBuffer: ArrayBuffer }> {
+		return new Promise((resolve, reject) => {
+			const timeoutId = setTimeout(() => {
+				reject(new Error(`Request timeout after ${timeoutMs}ms`));
+			}, timeoutMs);
+
+			requestUrl(requestParams)
+				.then((response) => {
+					clearTimeout(timeoutId);
+					resolve(response);
+				})
+				.catch((error) => {
+					clearTimeout(timeoutId);
+					reject(error);
+				});
+		});
 	}
 
 	/**
