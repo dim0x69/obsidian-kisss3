@@ -11,13 +11,13 @@ import {
 } from "@aws-sdk/client-s3";
 
 import { S3SyncSettings } from "../settings";
-import { KISSS3_DEBUG_LOG } from "main";
+import S3SyncPlugin from "../main";
 
 // Manages all interactions with the S3-compatible object storage.
 export class S3Service {
 	private client: S3Client | null = null;
 
-	constructor(private settings: S3SyncSettings) {
+	constructor(private settings: S3SyncSettings, private plugin: S3SyncPlugin) {
 		this.initializeClient();
 	}
 
@@ -76,7 +76,7 @@ export class S3Service {
 
 		let continuationToken: string | undefined = undefined;
 		let isTruncated = true;
-		if (KISSS3_DEBUG_LOG) {
+		if (this.plugin.settings.enableDebugLogging) {
 			console.log(
 				`listRemoteFiles(), bucket: ${this.settings.bucketName}, prefix: ${this.settings.remotePrefix}`,
 			);
@@ -112,7 +112,7 @@ export class S3Service {
 			isTruncated = response.IsTruncated ?? false;
 			continuationToken = response.NextContinuationToken;
 		}
-		if (KISSS3_DEBUG_LOG) {
+		if (this.plugin.settings.enableDebugLogging) {
 			console.log(`listRemoteFiles(),found ${remoteFiles.size} files`);
 		}
 		return remoteFiles;
@@ -122,7 +122,7 @@ export class S3Service {
 		if (!this.isConfigured()) throw new Error("S3 client not configured.");
 
 		const body = new Uint8Array(content);
-		if (KISSS3_DEBUG_LOG) {
+		if (this.plugin.settings.enableDebugLogging) {
 			console.log(
 				`uploadFile(${file.path}), bucket: ${this.settings.bucketName}, key: ${this.getRemoteKey(file.path)}`,
 			);
@@ -146,7 +146,7 @@ export class S3Service {
 	 */
 	async getFileMetadata(filePath: string): Promise<number> {
 		if (!this.isConfigured()) throw new Error("S3 client not configured.");
-		if (KISSS3_DEBUG_LOG) {
+		if (this.plugin.settings.enableDebugLogging) {
 			console.log(`getFileMetadata(${filePath})`);
 		}
 		const command = new HeadObjectCommand({

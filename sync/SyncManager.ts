@@ -1,7 +1,7 @@
 import { App, Notice, TFile, TFolder } from "obsidian";
 import { S3Service } from "../s3/S3Service";
 import S3SyncPlugin from "../main";
-import { KISSS3_DEBUG_LOG } from "../main";
+
 import { S3SyncSettings } from "../settings";
 import { _Object as S3Object } from "@aws-sdk/client-s3";
 import { SyncStateManager } from "./SyncStateManager";
@@ -36,9 +36,9 @@ export class SyncManager {
 		private app: App,
 		private plugin: S3SyncPlugin,
 	) {
-		this.s3Service = new S3Service(this.plugin.settings);
+		this.s3Service = new S3Service(this.plugin.settings, this.plugin);
 		this.stateManager = new SyncStateManager(this.app, this.plugin);
-		this.decisionEngine = new SyncDecisionEngine();
+		this.decisionEngine = new SyncDecisionEngine(this.plugin);
 	}
 
 	updateSettings(settings: S3SyncSettings) {
@@ -159,7 +159,7 @@ export class SyncManager {
 			}
 		});
 
-		if (KISSS3_DEBUG_LOG) {
+		if (this.plugin.settings.enableDebugLogging) {
 			console.log(
 				"generateLocalFilesMap - Local Files Map Keys:",
 				Array.from(localFiles.keys()),
@@ -189,7 +189,7 @@ export class SyncManager {
 				});
 			}
 		}
-		if (KISSS3_DEBUG_LOG) {
+		if (this.plugin.settings.enableDebugLogging) {
 			console.log(
 				`generateRemoteFilesMap : Remote Files Map Keys ${Array.from(remoteFiles.keys())}`,
 			);
