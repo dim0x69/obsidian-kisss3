@@ -1,3 +1,6 @@
+[![Test & TypeScript Check](https://github.com/dim0x69/obsidian-kisss3/actions/workflows/github_workflows_test-and-tscheck.yml/badge.svg)](https://github.com/dim0x69/obsidian-kisss3/actions/workflows/github_workflows_test-and-tscheck.yml)
+[![Release Obsidian plugin](https://github.com/dim0x69/obsidian-kisss3/actions/workflows/release.yml/badge.svg)](https://github.com/dim0x69/obsidian-kisss3/actions/workflows/release.yml)
+
 # Keep it simple, stupid! S3 Plugin for Obsidian
 
 A simple, single-backend sync plugin to keep your Obsidian vault in sync with an Amazon S3 bucket (or Cloudflare R2). Minimal configuration and no unnecessary complexity.
