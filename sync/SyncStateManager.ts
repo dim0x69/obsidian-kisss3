@@ -1,6 +1,7 @@
-import { App, Plugin } from "obsidian";
+import { App } from "obsidian";
 import { SyncState } from "./SyncTypes";
-import { KISSS3_DEBUG_LOG } from "../main";
+import S3SyncPlugin from "../main";
+
 /**
  * Manages the sync state using Obsidian's Plugin Data API
  */
@@ -9,7 +10,7 @@ export class SyncStateManager {
 
 	constructor(
 		private app: App,
-		private plugin: Plugin,
+		private plugin: S3SyncPlugin,
 	) {}
 
 	/**
@@ -40,7 +41,7 @@ export class SyncStateManager {
 	 */
 	async saveState(state: SyncState): Promise<void> {
 		try {
-			if (KISSS3_DEBUG_LOG) {
+			if (this.plugin.settings.enableDebugLogging) {
 				console.info("Saving sync state...");
 			}
 			// Load existing plugin data to preserve other data
@@ -52,7 +53,7 @@ export class SyncStateManager {
 
 			// Save back to plugin data API
 			await this.plugin.saveData(safePluginData);
-			if (KISSS3_DEBUG_LOG) {
+			if (this.plugin.settings.enableDebugLogging) {
 				console.log(
 					"S3 Sync: Successfully saved sync state to plugin data API",
 				);

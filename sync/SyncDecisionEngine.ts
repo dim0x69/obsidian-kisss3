@@ -10,11 +10,12 @@ import {
 	SyncFileState,
 } from "./SyncTypes";
 
-import { KISSS3_DEBUG_LOG } from "../main";
+import S3SyncPlugin from "../main";
 /**
  * Engine for making sync decisions based on three-source comparison
  */
 export class SyncDecisionEngine {
+	constructor(private plugin: S3SyncPlugin) {}
 	/**
 	 * Analyzes all files and generates sync decisions
 	 * @param localFiles Map of local files
@@ -35,7 +36,7 @@ export class SyncDecisionEngine {
 			...remoteFiles.keys(),
 			...stateFiles.keys(),
 		]);
-		if (KISSS3_DEBUG_LOG) {
+		if (this.plugin.settings.enableDebugLogging) {
 			console.log(
 				`generateSyncDecisions - localFile Keys: ${Array.from(localFiles.keys())}`,
 			);
@@ -47,7 +48,7 @@ export class SyncDecisionEngine {
 			);
 		}
 		for (const filePath of allFilePaths) {
-			if (KISSS3_DEBUG_LOG) {
+			if (this.plugin.settings.enableDebugLogging) {
 				console.log(
 					`generateSyncDecisions: Analyzing now: ${filePath}`,
 				);
@@ -58,7 +59,7 @@ export class SyncDecisionEngine {
 				remoteFiles,
 				stateFiles,
 			);
-			if (KISSS3_DEBUG_LOG) {
+			if (this.plugin.settings.enableDebugLogging) {
 				console.log(
 					`generateSyncDecisions: ${filePath}, descision: ${decision.action}`,
 				);
@@ -102,7 +103,7 @@ export class SyncDecisionEngine {
 			localFile,
 			remoteFile,
 		);
-		if (KISSS3_DEBUG_LOG) {
+		if (this.plugin.settings.enableDebugLogging) {
 			console.log(
 				`analyzeFile: ${filePath}, localStatus: ${localStatus}, remoteStatus: ${remoteStatus}, action: ${action}`,
 			);
@@ -132,7 +133,7 @@ export class SyncDecisionEngine {
 			? syncState?.localMtime
 			: syncState?.remoteMtime;
 
-		if (KISSS3_DEBUG_LOG) {
+		if (this.plugin.settings.enableDebugLogging) {
 			console.log(
 				`determineFileStatus: file: ${file?.path}, stateTime: ${stateTime}, isLocal: ${isLocal}`,
 			);

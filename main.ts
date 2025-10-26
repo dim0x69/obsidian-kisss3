@@ -6,7 +6,7 @@ import { S3SyncSettings, DEFAULT_SETTINGS } from "./settings";
 import { SyncManager } from "./sync/SyncManager";
 import { S3SyncSettingTab } from "./ui/S3SyncSettingTab";
 
-export let KISSS3_DEBUG_LOG = false;
+
 
 export default class S3SyncPlugin extends Plugin {
 	settings: S3SyncSettings;
@@ -14,7 +14,6 @@ export default class S3SyncPlugin extends Plugin {
 	private syncIntervalId: number | null = null;
 	async onload() {
 		await this.loadSettings();
-		KISSS3_DEBUG_LOG = this.settings.enableDebugLogging;
 		this.syncManager = new SyncManager(this.app, this);
 
 		this.addSettingTab(new S3SyncSettingTab(this.app, this));
@@ -81,7 +80,7 @@ export default class S3SyncPlugin extends Plugin {
 				this.syncManager.runSync();
 			}, intervalMillis);
 
-			if (KISSS3_DEBUG_LOG) {
+			if (this.settings.enableDebugLogging) {
 				console.log(`Sync interval: ${intervalMillis}ms`);
 			}
 
