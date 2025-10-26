@@ -487,10 +487,20 @@ export class SyncManager {
 		const newState: SyncState = {};
 		
 		for (const [filePath, fileState] of stateFiles.entries()) {
-			// Only include entries where at least one timestamp is defined (not obsolete)
-			if (fileState.localMtime !== undefined || fileState.remoteMtime !== undefined) {
-				newState[filePath] = fileState;
+			// For robustness: Remove entries where only one timestamp is defined 
+			// (incomplete state that can cause race conditions). This will result in 
+			// a download/upload on the next sync, which is safer than keeping inconsistent state.
+			const hasLocal = fileState.localMtime !== undefined;
+			const hasRemote = fileState.remoteMtime !== undefined;
+			
+			// Only include entries that have both timestamps or neither (complete states)
+			if ((hasLocal && hasRemote) || (!hasLocal && !hasRemote)) {
+				// Skip entries with neither timestamp (obsolete)
+				if (hasLocal || hasRemote) {
+					newState[filePath] = fileState;
+				}
 			}
+			// Incomplete entries (only localMtime or only remoteMtime) are filtered out
 		}
 
 		// Save the updated state
