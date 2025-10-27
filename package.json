@@ -1,7 +1,7 @@
 {
 	"name": "obsidian-kisss3",
 	"version": "14.0.0",
-	"description": "Keep it simple, stupid! S3 Plugin for Obsidian",
+	"description": "Keep it simple, stupid! S3 Sync Plugin",
 	"main": "main.js",
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
