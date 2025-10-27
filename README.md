@@ -16,7 +16,7 @@ More on the [sync algorithm](SYNC.md)
 ## Purpose
 
 - This plugin is designed for users who want a straightforward way to back up or share their Obsidian vault using Amazon S3. It follows the KISS (Keep It Simple, Stupid) principle—no extra features, no cloud lock-in, no surprises—just reliable S3 sync for your notes.
-- The motivation to create this plugin was driven by a not very good feeling about other sync plugins, especially regarding complexity and the following impossibility to check their source code.
+- The motivation to create this plugin was driven by a not very good feeling about other sync plugins, especially regarding complexity and the following expense to check their source code.
 
 ## Features
 
