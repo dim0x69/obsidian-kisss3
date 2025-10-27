@@ -3,7 +3,7 @@
 	"name": "kisss3",
 	"version": "14.0.0",
 	"minAppVersion": "1.9.14",
-	"description": "Keep it simple, stupid! S3 Plugin for Obsidian. Sync your vault from and to S3.",
+	"description": "Keep it simple, stupid! Sync your vault from and to S3.",
 	"author": "Dimitrios Slamaris",
 	"authorUrl": "https://github.com/dim0x69",
 	"fundingUrl": "https://www.paypal.com/donate/?hosted_button_id=VQXSG3ZCU5LLQ",
