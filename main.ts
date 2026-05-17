@@ -13,6 +13,7 @@ export default class S3SyncPlugin extends Plugin {
 	private syncManager: SyncManager;
 	private syncIntervalId: number | null = null;
 	async onload() {
+		console.log(`KISSS3 VERSION ${this.manifest.version} LOADING`);
 		await this.loadSettings();
 		this.syncManager = new SyncManager(this.app, this);
 
