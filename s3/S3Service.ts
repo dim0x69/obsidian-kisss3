@@ -93,12 +93,10 @@ export class S3Service {
 
 			response.Contents?.forEach((obj: S3Object) => {
 				if (obj.Key) {
-					// Don't include the folder marker object itself.
-					if (
-						obj.Key.endsWith("/") &&
-						this.getLocalPath(obj.Key) === ""
-					)
+					// Ignore S3 folder markers (keys ending with '/')
+					if (obj.Key.endsWith("/")) {
 						return;
+					}
 
 					const relativePath = this.getLocalPath(obj.Key);
 

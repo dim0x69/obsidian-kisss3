@@ -330,9 +330,19 @@ export class SyncManager {
 			decision.filePath,
 		);
 
-		if (localFile && !(localFile instanceof TFolder)) {
+		if (localFile instanceof TFolder) {
+			console.warn(
+				`S3 Sync: Cannot download ${decision.filePath} - a folder already exists at this path.`,
+			);
+			new Notice(
+				`S3 Sync: Skip ${decision.filePath} (path blocked by folder)`,
+			);
+			return;
+		}
+
+		if (localFile && localFile instanceof TFile) {
 			// File exists, modify it
-			await this.app.vault.modifyBinary(localFile as TFile, content, {
+			await this.app.vault.modifyBinary(localFile, content, {
 				mtime: remoteFile.mtime,
 			});
 		} else {
@@ -440,10 +450,16 @@ export class SyncManager {
 			new Date(remoteFile.mtime),
 		);
 
-		// Save the remote version with a new name
-		await this.app.vault.createBinary(conflictFileName, remoteContent, {
-			mtime: remoteFile.mtime,
-		});
+		// Check if conflict file already exists
+		const existingConflictFile = this.app.vault.getAbstractFileByPath(conflictFileName);
+		if (existingConflictFile) {
+			console.warn(`S3 Sync: Conflict file ${conflictFileName} already exists, skipping creation.`);
+		} else {
+			// Save the remote version with a new name
+			await this.app.vault.createBinary(conflictFileName, remoteContent, {
+				mtime: remoteFile.mtime,
+			});
+		}
 
 		new Notice(`S3 Sync: Saved remote version as ${conflictFileName}`);
 
@@ -466,12 +482,22 @@ export class SyncManager {
 		const folderPath = filePath.substring(0, filePath.lastIndexOf("/"));
 		if (folderPath) {
 			try {
-				const existingFolder =
+				const existingFile =
 					this.app.vault.getAbstractFileByPath(folderPath);
-				if (!existingFolder) {
+				if (!existingFile) {
 					await this.app.vault.createFolder(folderPath);
+				} else if (existingFile instanceof TFile) {
+					console.error(
+						`S3 Sync: Cannot create folder ${folderPath} because a file already exists at this path.`,
+					);
+					throw new Error(
+						`Path blocked by file: ${folderPath}`,
+					);
 				}
 			} catch (e) {
+				if (e.message?.includes("Path blocked by file")) {
+					throw e;
+				}
 				// Folder likely created between check and call, ignore
 			}
 		}

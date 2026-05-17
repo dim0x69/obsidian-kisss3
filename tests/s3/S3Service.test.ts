@@ -251,6 +251,11 @@ describe('S3Service', () => {
           Size: 0,
         },
         {
+          Key: 'vault/folder/', // Subfolder marker
+          LastModified: new Date('2024-01-15T10:00:00Z'),
+          Size: 0,
+        },
+        {
           Key: 'vault/folder/file.md',
           LastModified: new Date('2024-01-15T10:00:00Z'),
           Size: 100,
@@ -266,7 +271,8 @@ describe('S3Service', () => {
 
       expect(result.size).toBe(1);
       expect(result.has('folder/file.md')).toBe(true);
-      expect(result.has('')).toBe(false); // The root folder marker would be converted to empty string
+      expect(result.has('')).toBe(false);
+      expect(result.has('folder/')).toBe(false);
     });
 
     test('Handles empty bucket', async () => {
