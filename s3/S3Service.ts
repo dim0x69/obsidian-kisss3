@@ -93,12 +93,17 @@ export class S3Service {
 
 			response.Contents?.forEach((obj: S3Object) => {
 				if (obj.Key) {
+					const trimmedKey = obj.Key.trim();
+					const relativePath = this.getLocalPath(trimmedKey);
+					
 					// Ignore S3 folder markers (keys ending with '/')
-					if (obj.Key.endsWith("/")) {
+					// Use regex to catch trailing slashes with any trailing whitespace
+					if (/\/\s*$/.test(trimmedKey) || /\/\s*$/.test(relativePath)) {
+						if (this.plugin.settings.enableDebugLogging) {
+							console.log(`listRemoteFiles: Ignoring folder marker: "${trimmedKey}" (path: "${relativePath}")`);
+						}
 						return;
 					}
-
-					const relativePath = this.getLocalPath(obj.Key);
 
 					// Apply exclusion rule: ignore files/folders starting with a dot
 					if (!this.shouldIgnoreFile(relativePath)) {

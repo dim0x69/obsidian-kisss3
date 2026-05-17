@@ -176,6 +176,11 @@ export class SyncManager {
 		const s3Objects = await this.s3Service.listRemoteFiles();
 
 		for (const [path, s3Object] of s3Objects.entries()) {
+			// Redundant check: ignore any path that ends with a slash or is empty
+			if (path.endsWith("/") || path.trim() === "") {
+				continue;
+			}
+
 			// Apply exclusion rule: ignore files/folders starting with a dot
 			if (
 				!this.shouldIgnoreFile(path) &&
@@ -347,10 +352,18 @@ export class SyncManager {
 			});
 		} else {
 			// File doesn't exist, create it
-			await this.app.vault.createBinary(decision.filePath, content, {
-				mtime: remoteFile.mtime,
-			});
+			try {
+				await this.app.vault.createBinary(decision.filePath, content, {
+					mtime: remoteFile.mtime,
+				});
+			} catch (e) {
+				if (e.message?.includes("File already exists")) {
+					console.error(`S3 Sync: CRITICAL COLLISION on path "${decision.filePath}". This path is likely blocked by a folder or a hidden file with a conflicting name.`);
+				}
+				throw e;
+			}
 		}
+
 
 		// Update state map immediately after successful download
 		// Get the actual local file mtime after download
